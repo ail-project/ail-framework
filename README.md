@@ -93,6 +93,9 @@ cd ail-framework
 chmod u+x centos_installing_deps.sh
 ./centos_installing_deps.sh
 
+# For Debian and Ubuntu ARM ( test on aarch64)
+./installing_arm.sh
+
 # Launch ail
 cd ~/ail-framework/
 cd bin/
