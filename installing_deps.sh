@@ -35,8 +35,6 @@ sudo apt-get install graphviz -qq
 # install nosetests
 sudo apt-get install python3-nose -qq
 
-# install protobuf compiler
-apt install protobuf-compiler
 # ssdeep
 sudo apt-get install libfuzzy-dev -qq
 sudo apt-get install build-essential libffi-dev automake autoconf libtool -qq
@@ -84,7 +82,7 @@ sudo make install
 popd
 
 # ARDB #
-test ! -d ardb/ && git clone https://github.com/vncloudsco/ardb.git
+test ! -d ardb/ && git clone https://github.com/ail-project/ardb.git
 pushd ardb/
 make
 popd
