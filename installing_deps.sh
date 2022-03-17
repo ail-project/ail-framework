@@ -11,8 +11,8 @@ sudo apt-get update
 sudo apt-get install python3-pip virtualenv python3-dev python3-tk libfreetype6-dev \
     screen g++ python-tk unzip libsnappy-dev cmake -qq
 
-#Needed for downloading jemalloc
-sudo apt-get install wget -qq
+#Needed for downloading jemalloc and protobuf compiler
+sudo apt-get install wget protobuf-compiler -qq
 
 #optional tor install
 sudo apt-get install tor -qq
@@ -61,7 +61,7 @@ make
 popd
 
 # Faup
-test ! -d faup/ && git clone https://github.com/stricaud/faup.git
+test ! -d faup/ && git clone https://github.com/My-WAF/faup-ARM.git faup
 pushd faup/
 test ! -d build && mkdir build
 cd build
