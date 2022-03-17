@@ -42,6 +42,14 @@ sudo apt-get install build-essential libffi-dev automake autoconf libtool -qq
 # sflock, gz requirement
 sudo apt-get install p7zip-full -qq
 
+#build update gcc >= 10
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=27503
+apt update -y
+apt upgrade -y
+apt install -y build-essential
+apt install -y gcc-10 g++-10 cpp-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10 --slave /usr/bin/gcov gcov /usr/bin/gcov-10
+
 # SUBMODULES #
 git submodule update --init
 
