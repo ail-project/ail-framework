@@ -82,7 +82,7 @@ sudo make install
 popd
 
 # ARDB #
-test ! -d ardb/ && git clone https://github.com/ail-project/ardb.git
+test ! -d ardb/ && git clone https://github.com/My-WAF/ardb.git
 pushd ardb/
 make
 popd
