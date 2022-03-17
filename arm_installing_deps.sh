@@ -11,8 +11,8 @@ sudo apt-get update
 sudo apt-get install python3-pip virtualenv python3-dev python3-tk libfreetype6-dev \
     screen g++ python-tk unzip libsnappy-dev cmake -qq
 
-#Needed for downloading jemalloc
-sudo apt-get install wget -qq
+#Needed for downloading jemalloc and protobuf compiler
+sudo apt-get install wget protobuf-compiler -qq
 
 #optional tor install
 sudo apt-get install tor -qq
@@ -42,6 +42,14 @@ sudo apt-get install build-essential libffi-dev automake autoconf libtool -qq
 # sflock, gz requirement
 sudo apt-get install p7zip-full -qq
 
+#build update gcc >= 10
+# https://gcc.gnu.org/bugzilla/show_bug.cgi?id=27503
+apt update -y
+apt upgrade -y
+apt install -y build-essential
+apt install -y gcc-10 g++-10 cpp-10
+update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-10 100 --slave /usr/bin/g++ g++ /usr/bin/g++-10 --slave /usr/bin/gcov gcov /usr/bin/gcov-10
+
 # SUBMODULES #
 git submodule update --init
 
@@ -53,7 +61,7 @@ make
 popd
 
 # Faup
-test ! -d faup/ && git clone https://github.com/stricaud/faup.git
+test ! -d faup/ && git clone https://github.com/My-WAF/faup-ARM.git faup
 pushd faup/
 test ! -d build && mkdir build
 cd build
@@ -82,7 +90,7 @@ sudo make install
 popd
 
 # ARDB #
-test ! -d ardb/ && git clone https://github.com/ail-project/ardb.git
+test ! -d ardb/ && git clone https://github.com/My-WAF/ardb.git
 pushd ardb/
 make
 popd
@@ -149,3 +157,8 @@ popd
 bash ${AIL_BIN}/LAUNCH.sh -k &
 wait
 echo ""
+
+pushd ${AIL_HOME}/AILENV/lib/python3.8/site-packages/pyfaup-1.2-py3.8.egg/pyfaup/Linux/
+mv x86_64 x86_64_backp
+cp -r arm x86_64
+pushd ${AIL_HOME}
