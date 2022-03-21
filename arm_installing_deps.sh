@@ -158,6 +158,7 @@ bash ${AIL_BIN}/LAUNCH.sh -k &
 wait
 echo ""
 
+# remove faup lib default, because default file .so lib affter build via python venv only support x86_64
 pushd ${AIL_HOME}/AILENV/lib/python3.8/site-packages/pyfaup-1.2-py3.8.egg/pyfaup/Linux/
 mv x86_64 x86_64_backp
 cp -r arm x86_64
