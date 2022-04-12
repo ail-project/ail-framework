@@ -477,7 +477,7 @@ def is_crawler_activated():
     return activate_crawler == 'True'
 
 def get_crawler_all_types():
-    return ['onion', 'regular']
+    return ['onion', 'i2p', 'regular']
 
 def sanitize_crawler_types(l_crawler_types):
     all_crawler_types = get_crawler_all_types()
@@ -538,7 +538,7 @@ def get_stats_last_crawled_domains(crawler_types, date):
 def get_splash_crawler_latest_stats():
     now = datetime.now()
     date = now.strftime("%Y%m%d")
-    return get_stats_last_crawled_domains(['onion', 'regular'], date)
+    return get_stats_last_crawled_domains(['onion', 'i2p', 'regular'], date)
 
 def get_nb_crawlers_to_launch_by_splash_name(splash_name):
     res = r_serv_onion.hget('all_crawlers_to_launch', splash_name)
@@ -694,6 +694,8 @@ def create_crawler_task(url, screenshot=True, har=True, depth_limit=1, max_pages
     else:
         if tld == 'onion':
             crawler_type = 'onion'
+        elif tld == 'i2p':
+            crawler_type = 'i2p'
         else:
             crawler_type = 'regular'
 
@@ -968,6 +970,8 @@ def get_crawler_queue_types_by_splash_name(splash_name):
     if crawler_type == 'tor':
         all_domain_type.append('onion')
         all_domain_type.append('regular')
+    elif crawler_type == 'i2p':
+        all_domain_type.append('i2p')
     else:
         all_domain_type.append('regular')
     return all_domain_type
@@ -983,6 +987,8 @@ def get_crawler_type_by_url(url):
 
     if tld == 'onion':
         crawler_type = 'onion'
+    elif tld == 'i2p':
+        crawler_type = 'i2p'
     else:
         crawler_type = 'regular'
     return crawler_type

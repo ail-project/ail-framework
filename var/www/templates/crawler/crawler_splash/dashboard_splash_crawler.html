@@ -49,6 +49,25 @@
 
 					</div>
 					<div class="col-xl-6">
+
+						<div class="card mt-1 mb-1">
+						  <div class="card-header text-white bg-dark">
+								<h5><a class="text-info" href="{{ url_for('hiddenServices.Crawler_Splash_last_by_type')}}?type=i2p"><i class="fas fa-ghost"></i></i> I2P Crawlers</a></h5>
+								<div class="row">
+									<div class="col-6">
+										<a href="{{ url_for('hiddenServices.show_domains_by_daterange') }}?service_type=i2p&domains_up=True&date_from={{date}}&date_to={{date}}" class="badge badge-success" id="stat_i2p_domain_up">{{ splash_crawlers_latest_stats['i2p']['domains_up'] }}</a> UP
+										<a href="{{ url_for('hiddenServices.show_domains_by_daterange') }}?service_type=i2p&domains_down=True&date_from={{date}}&date_to={{date}}" class="badge badge-danger ml-md-3" id="stat_i2p_domain_down">{{ splash_crawlers_latest_stats['i2p']['domains_down'] }}</a> DOWN
+									</div>
+									<div class="col-6">
+										<a href="{{ url_for('hiddenServices.show_domains_by_daterange') }}?service_type=i2p&domains_up=True&domains_down=True&date_from={{date}}&date_to={{date}}" class="badge badge-success" id="stat_i2p_total">{{ splash_crawlers_latest_stats['i2p']['total'] }}</a> Crawled
+										<span class="badge badge-warning ml-md-3" id="stat_i2p_queue">{{ splash_crawlers_latest_stats['i2p']['domains_queue'] }}</span> Queue
+									</div>
+								</div>
+							</div>
+						</div>
+
+					</div>
+					<div class="col-xl-6">
 						<div class="card mt-1 mb-1">
 							<div class="card-header text-white bg-dark">
 								<h5><a class="text-info" href="{{ url_for('hiddenServices.Crawler_Splash_last_by_type')}}?type=regular"><i class="fab fa-html5"></i> Regular Crawlers</a></h5>
@@ -78,7 +97,11 @@
 									{%if splash_crawler['type']=='onion'%}
 										<i class="fas fa-user-secret"></i>
 									{%else%}
-										<i class="fab fa-html5">
+										{%if splash_crawler['type']=='i2p'%}
+											<i class="fas fa-ghost"></i>
+										{%else%}
+											<i class="fab fa-html5">
+										{%endif%}
 									{%endif%}
 								</td>
 								<td>
@@ -96,14 +119,21 @@
 
 				<hr>
 				<div class="row mb-3">
-					<div class="col-xl-6">
+					<div class="col-md-4">
 						<div class="text-center">
 							<a class="btn btn-secondary" href="{{url_for('crawler_splash.domains_explorer_onion')}}" role="button">
 								<i class="fas fa-user-secret"></i> Onion Domain Explorer
 							</a>
 						</div>
 					</div>
-					<div class="col-xl-6">
+					<div class="col-md-4">
+						<div class="text-center">
+							<a class="btn btn-secondary" href="{{url_for('crawler_splash.domains_explorer_i2p')}}" role="button">
+								<i class="fas fa-ghost"></i></i> I2P Domain Explorer
+							</a>
+						</div>
+					</div>
+					<div class="col-md-4">
 						<div class="text-center">
 							<a class="btn btn-secondary" href="{{url_for('crawler_splash.domains_explorer_web')}}" role="button">
 								<i class="fab fa-html5"></i> Web Domain Explorer
@@ -170,6 +200,11 @@ function refresh_crawler_status(){
 			$('#stat_onion_total').text(data.splash_crawlers_latest_stats['onion']['total']);
 			$('#stat_onion_queue').text(data.splash_crawlers_latest_stats['onion']['domains_queue']);
 
+			$('#stat_i2p_domain_up').text(data.splash_crawlers_latest_stats['i2p']['domains_up']);
+			$('#stat_i2p_domain_down').text(data.splash_crawlers_latest_stats['i2p']['domains_down']);
+			$('#stat_i2p_total').text(data.splash_crawlers_latest_stats['i2p']['total']);
+			$('#stat_i2p_queue').text(data.splash_crawlers_latest_stats['i2p']['domains_queue']);
+
 			$('#stat_regular_domain_up').text(data.splash_crawlers_latest_stats['regular']['domains_up']);
 			$('#stat_regular_domain_down').text(data.splash_crawlers_latest_stats['regular']['domains_down']);
 			$('#stat_regular_total').text(data.splash_crawlers_latest_stats['regular']['total']);
@@ -194,7 +229,11 @@ function refresh_crawler_status(){
 						if(crawler['type'] === 'onion'){
 							icon_t = 'fas fa-user-secret';
 						} else {
-							icon_t = 'fab fa-html5';
+							if(crawler['type'] === 'i2p'){
+								icon_t = 'fas fa-ghost';
+							} else {
+								icon_t = 'fab fa-html5';
+							}
 						}
 
 				    var newCell  = newRow.insertCell(0);

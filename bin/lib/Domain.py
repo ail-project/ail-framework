@@ -80,7 +80,7 @@ def sanitize_domain_types(l_domain_type):
 
 ######## DOMAINS ########
 def get_all_domains_type():
-    return ['onion', 'regular']
+    return ['onion', 'i2p', 'regular']
 
 def get_all_domains_up(domain_type, r_list=True):
     '''
@@ -391,6 +391,8 @@ def api_get_domains_by_languages(domains_types, languages, domains_metadata=Fals
 def get_domain_type(domain):
     if str(domain).endswith('.onion'):
         return 'onion'
+    elif str(domain).endswith('.i2p'):
+        return 'i2p'
     else:
         return 'regular'
 

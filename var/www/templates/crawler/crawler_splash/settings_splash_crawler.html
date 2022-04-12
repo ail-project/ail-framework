@@ -126,7 +126,11 @@
 														{%if all_splash[splash_name]['type']=='tor'%}
 															<i class="fas fa-user-secret"></i>
 														{%else%}
-															<i class="fab fa-html5">
+															{%if all_splash[splash_name]['type']=='i2p'%}
+																<i class="fas fa-ghost"></i>
+															{%else%}
+																<i class="fab fa-html5">
+															{%endif%}
 														{%endif%}
 														{{all_splash[splash_name]['type']}}
 													</td>
@@ -191,7 +195,11 @@
 														{%if all_proxies[proxy_name]['crawler_type']=='tor'%}
 															<i class="fas fa-user-secret"></i>
 														{%else%}
-															<i class="fab fa-html5">
+															{%if all_proxies[proxy_name]['crawler_type']=='i2p'%}
+																<i class="fas fa-ghost"></i>
+															{%else%}
+																<i class="fab fa-html5">
+															{%endif%}
 														{%endif%}
 														{{all_proxies[proxy_name]['crawler_type']}}
 													</td>

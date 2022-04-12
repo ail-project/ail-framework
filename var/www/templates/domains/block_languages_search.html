@@ -23,6 +23,12 @@
 					</label>
 				</div>
 				<div class="custom-control custom-switch">
+					<input class="custom-control-input" type="checkbox" name="domain_i2p_switch" value="" id="domain_i2p_switch" {%if not domains_types%}checked{%elif 'i2p' in domains_types%}checked{%endif%}>
+					<label class="custom-control-label" for="domain_i2P_switch">
+						<span class="badge badge-danger"><i class="fas fa-ghost"></i></i> I2P Domains</span>
+					</label>
+				</div>
+				<div class="custom-control custom-switch">
 					<input class="custom-control-input" type="checkbox" name="domain_regular_switch" value="True" id="domain_regular_switch" {%if not domains_types%}checked{%elif 'regular' in domains_types%}checked{%endif%}>
 					<label class="custom-control-label" for="domain_regular_switch">
 						<span class="badge badge-warning"><i class="fab fa-html5"></i> Web Domains</span>
@@ -54,7 +60,7 @@
   });
 
   function searchLanguages() {
-		var all_domain_types = ['onion', 'regular'] // TODO: load from flask
+		var all_domain_types = ['onion', 'i2p', 'regular'] // TODO: load from flask
 		var l_domains_types = [];
 
   	var data = llanguages.getValue();

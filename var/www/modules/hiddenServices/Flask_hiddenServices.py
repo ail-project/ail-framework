@@ -36,8 +36,8 @@ import crawlers
 hiddenServices = Blueprint('hiddenServices', __name__, template_folder='templates')
 
 faup = Faup()
-list_types=['onion', 'regular']
-dic_type_name={'onion':'Onion', 'regular':'Website'}
+list_types=['onion', 'i2p', 'regular']
+dic_type_name={'onion':'Onion', 'i2p':'I2P', 'regular':'Website'}
 
 # ============ FUNCTIONS ============
 
@@ -90,7 +90,7 @@ def is_valid_domain(domain):
         return False
 
 def is_valid_service_type(service_type):
-    accepted_service = ['onion', 'regular']
+    accepted_service = ['onion', 'i2p', 'regular']
     if service_type in accepted_service:
         return True
     else:
@@ -106,6 +106,8 @@ def get_domain_type(domain):
     type_id = domain.split(':')[-1]
     if type_id == 'onion':
         return 'onion'
+    elif type_id == 'i2p':
+        return 'i2p'
     else:
         return 'regular'
 
@@ -113,8 +115,11 @@ def get_type_domain(domain):
     if domain is None:
         type = 'regular'
     else:
-        if domain.rsplit('.', 1)[1] == 'onion':
+        loc = domain.rsplit('.', 1)[1]
+        if loc == 'onion':
             type = 'onion'
+        elif loc == 'i2p':
+            type = 'i2p'
         else:
             type = 'regular'
     return type
@@ -387,12 +392,18 @@ def auto_crawler():
         page = 1
 
     nb_auto_onion = r_serv_onion.scard('auto_crawler_url:onion')
+    nb_auto_i2p = r_serv_onion.scard('auto_crawler_url:i2p')
     nb_auto_regular = r_serv_onion.scard('auto_crawler_url:regular')
 
     if nb_auto_onion > nb_auto_regular:
-        nb_max = nb_auto_onion
-    else:
+        if nb_auto_onion > nb_auto_i2p:
+            nb_max = nb_auto_onion
+        else:
+            nb_max = nb_auto_i2p
+    elif nb_auto_regular > nb_auto_i2p:
         nb_max = nb_auto_regular
+    else:
+        nb_max = nb_auto_i2p
 
     nb_page_max = nb_max/(nb_element_to_display)
     if isinstance(nb_page_max, float):
@@ -412,6 +423,13 @@ def auto_crawler():
     else:
         auto_crawler_domain_onions = list(r_serv_onion.smembers('auto_crawler_url:onion'))[start:stop]
 
+    if start > nb_auto_i2p:
+        auto_crawler_domain_i2p = []
+    elif stop > nb_auto_i2p:
+        auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:onion'))[start:nb_auto_i2p]
+    else:
+        auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:onion'))[start:stop]
+
     if start > nb_auto_regular:
         auto_crawler_domain_regular = []
     elif stop > nb_auto_regular:
@@ -420,12 +438,14 @@ def auto_crawler():
         auto_crawler_domain_regular = list(r_serv_onion.smembers('auto_crawler_url:regular'))[start:stop]
 
     auto_crawler_domain_onions_metadata = get_last_crawled_domains_metadata(auto_crawler_domain_onions, '', type='onion', auto_mode=True)
+    auto_crawler_domain_i2p_metadata = get_last_crawled_domains_metadata(auto_crawler_domain_i2p, '', type='i2p', auto_mode=True)
     auto_crawler_domain_regular_metadata = get_last_crawled_domains_metadata(auto_crawler_domain_regular, '', type='regular', auto_mode=True)
 
     return render_template("Crawler_auto.html", page=page, nb_page_max=nb_page_max,
                                 last_domains=last_domains,
                                 is_manager_connected=crawlers.get_splash_manager_connection_metadata(),
                                 auto_crawler_domain_onions_metadata=auto_crawler_domain_onions_metadata,
+                                auto_crawler_domain_i2p_metadata=auto_crawler_domain_i2p_metadata,
                                 auto_crawler_domain_regular_metadata=auto_crawler_domain_regular_metadata)
 
 @hiddenServices.route("/crawlers/remove_auto_crawler", methods=['GET'])

@@ -38,6 +38,8 @@ class Domain(AbstractObject):
     def get_domain_type(self):
         if str(self.id).endswith('.onion'):
             return 'onion'
+        elif str(self.id).endswith('.i2p'):
+            return 'i2p'
         else:
             return 'regular'
 
