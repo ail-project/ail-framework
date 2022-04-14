@@ -134,6 +134,40 @@
 							<table class="table" id="myTable_2">
 								<thead class="thead-dark">
 										<tr>
+											<th>I2P Url</th>
+											<th></th>
+											<th>Next Check</th>
+											<th></th>
+											<th></th>
+										</tr>
+								</thead>
+								<tbody id="tbody_last_crawled">
+										{% for metadata_domain in auto_crawler_domain_i2p_metadata %}
+											<tr>
+												<td><a target="_blank" href="{{ url_for('crawler_splash.showDomain') }}?domain={{ metadata_domain['domain'] }}&port={{metadata_domain['port']}}&epoch={{metadata_domain['epoch']}}">{{ metadata_domain['url'] }}</a></td>
+												<td><a class="btn btn-outline-danger px-1 py-0" href="{{ url_for('hiddenServices.remove_auto_crawler') }}?url={{ metadata_domain['url'] }}&page={{page}}">
+													<i class="fas fa-trash-alt"></i></a>
+												</td>
+												<td>{{metadata_domain['epoch']}}</td>
+												<td><div style="color:{{metadata_domain['status_color']}}; display:inline-block">
+															<i class="fas {{metadata_domain['status_icon']}} "></i>
+															{{metadata_domain['status_text']}}
+														</div>
+												</td>
+												<td>
+													<button class="btn btn-outline-secondary px-1 py-0 disabled"><i class="fas fa-pencil-alt"></i></button>
+												</td>
+											</tr>
+										{% endfor %}
+								</tbody>
+							</table>
+						</div>
+					</div>
+					<div class="col-lg-6">
+						<div class="table-responsive mt-1 table-hover table-borderless table-striped">
+							<table class="table" id="myTable_3">
+								<thead class="thead-dark">
+										<tr>
 											<th>Regular Url</th>
 											<th></th>
 											<th>Next Check</th>
@@ -227,6 +261,16 @@ $(document).ready(function(){
 	});
 
 	table2 = $('#myTable_2').DataTable(
+	{
+		//"aLengthMenu": [[5, 10, 15, 20, -1], [5, 10, 15, 20, "All"]],
+		//"iDisplayLength": 5,
+		//"order": [[ 0, "desc" ]]
+		columnDefs: [
+   		{ orderable: false, targets: [-1, -4] }
+		]
+	});
+
+	table3 = $('#myTable_3').DataTable(
 	{
 		//"aLengthMenu": [[5, 10, 15, 20, -1], [5, 10, 15, 20, "All"]],
 		//"iDisplayLength": 5,

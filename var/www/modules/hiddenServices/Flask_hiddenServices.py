@@ -426,9 +426,15 @@ def auto_crawler():
     if start > nb_auto_i2p:
         auto_crawler_domain_i2p = []
     elif stop > nb_auto_i2p:
+<<<<<<< Updated upstream
         auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:onion'))[start:nb_auto_i2p]
     else:
         auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:onion'))[start:stop]
+=======
+        auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:i2p'))[start:nb_auto_i2p]
+    else:
+        auto_crawler_domain_i2p = list(r_serv_onion.smembers('auto_crawler_url:i2p'))[start:stop]
+>>>>>>> Stashed changes
 
     if start > nb_auto_regular:
         auto_crawler_domain_regular = []
