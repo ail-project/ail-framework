@@ -56,13 +56,10 @@ class HiddenServices(object):
         self.port = port
         self.tags = {}
 
-        if type == 'onion' or type == 'regular':
+        if type == 'onion' or type == 'regular' or type == 'i2p':
             self.paste_directory = os.path.join(os.environ['AIL_HOME'], config_loader.get_config_str("Directories", "pastes"))
             self.paste_crawled_directory = os.path.join(self.paste_directory, config_loader.get_config_str("Directories", "crawled"))
             self.paste_crawled_directory_name = config_loader.get_config_str("Directories", "crawled")
-            self.screenshot_directory = config_loader.get_files_directory('screenshot')
-        elif type == 'i2p':
-            self.paste_directory = os.path.join(os.environ['AIL_HOME'], config_loader.get_config_str("Directories", "crawled_screenshot"))
             self.screenshot_directory = config_loader.get_files_directory('screenshot')
         else:
             ## TODO: # FIXME: add error
