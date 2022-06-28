@@ -46,6 +46,9 @@ class AbstractModule(ABC):
         # If provided could be a namespaced channel like script:<ModuleName>
         self.redis_logger.channel = logger_channel
 
+        #Cache key
+        self.redis_cache_key = regex_helper.generate_redis_cache_key(self.module_name)
+        self.max_execution_time = 30
 
         # Run module endlessly
         self.proceed = True
@@ -102,6 +105,7 @@ class AbstractModule(ABC):
                     self.compute(message)
                 except Exception as err:
                     trace = traceback.format_tb(err.__traceback__)
+                    trace = ''.join(trace)
                     self.redis_logger.critical(f"Error in module {self.module_name}: {err}")
                     self.redis_logger.critical(f"Module {self.module_name} input message: {message}")
                     self.redis_logger.critical(trace)
@@ -109,8 +113,7 @@ class AbstractModule(ABC):
                     print(f"ERROR: {err}")
                     print(f'MESSAGE: {message}')
                     print('TRACEBACK:')
-                    for line in trace:
-                        print(line)
+                    print(trace)
                 # remove from set_module
                 ## check if item process == completed
 

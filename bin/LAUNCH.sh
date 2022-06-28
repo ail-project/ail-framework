@@ -19,15 +19,6 @@ if [ -e "${DIR}/AILENV/bin/python" ]; then
     ENV_PY="${DIR}/AILENV/bin/python"
     export AIL_VENV=${AIL_HOME}/AILENV/
     . ./AILENV/bin/activate
-elif [ ! -z "$TRAVIS" ]; then
-    echo "Travis detected"
-    ENV_PY="~/virtualenv/python3.6/bin/python"
-    export AIL_VENV="~/virtualenv/python3.6/"
-
-    export AIL_BIN=${AIL_HOME}/bin/
-    export AIL_FLASK=${AIL_HOME}/var/www/
-    export AIL_REDIS=${AIL_HOME}/redis/src/
-    export AIL_ARDB=${AIL_HOME}/ardb/src/
 else
     echo "Please make sure you have a AIL-framework environment, au revoir"
     exit 1
@@ -209,8 +200,6 @@ function launching_scripts {
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "Decoder" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Decoder.py; read x"
     sleep 0.1
-    screen -S "Script_AIL" -X screen -t "DomClassifier" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./DomClassifier.py; read x"
-    sleep 0.1
     screen -S "Script_AIL" -X screen -t "Keys" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Keys.py; read x"
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "Onion" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Onion.py; read x"
@@ -220,17 +209,25 @@ function launching_scripts {
     screen -S "Script_AIL" -X screen -t "Telegram" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Telegram.py; read x"
     sleep 0.1
 
+    screen -S "Script_AIL" -X screen -t "Hosts" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Hosts.py; read x"
+    sleep 0.1
+    screen -S "Script_AIL" -X screen -t "DomClassifier" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./DomClassifier.py; read x"
+    sleep 0.1
+
     screen -S "Script_AIL" -X screen -t "Urls" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Urls.py; read x"
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "SQLInjectionDetection" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./SQLInjectionDetection.py; read x"
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "LibInjection" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./LibInjection.py; read x"
     sleep 0.1
-
+    screen -S "Script_AIL" -X screen -t "Zerobins" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Zerobins.py; read x"
+    sleep 0.1
 
     ##################################
     #       TRACKERS MODULES         #
     ##################################
+    screen -S "Script_AIL" -X screen -t "Tracker_Typo_Squatting" bash -c "cd ${AIL_BIN}/trackers; ${ENV_PY} ./Tracker_Typo_Squatting.py; read x"
+    sleep 0.1
     screen -S "Script_AIL" -X screen -t "Tracker_Term" bash -c "cd ${AIL_BIN}/trackers; ${ENV_PY} ./Tracker_Term.py; read x"
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "Tracker_Regex" bash -c "cd ${AIL_BIN}/trackers; ${ENV_PY} ./Tracker_Regex.py; read x"
@@ -439,12 +436,12 @@ function launch_feeder {
 }
 
 function killscript {
-    if [[ $islogged || $isqueued || $is_ail_core || $isscripted || $isflasked || $isfeeded || $iscrawler ]]; then
+    if [[ $islogged || $isqueued || $is_ail_core || $isscripted || $isflasked || $isfeeded || $iscrawler || $is_ail_2_ail ]]; then
         echo -e $GREEN"Killing Script"$DEFAULT
-        kill $islogged $isqueued $is_ail_core $isscripted $isflasked $isfeeded $iscrawler
+        kill $islogged $isqueued $is_ail_core $isscripted $isflasked $isfeeded $iscrawler $is_ail_2_ail
         sleep 0.2
         echo -e $ROSE`screen -ls`$DEFAULT
-        echo -e $GREEN"\t* $islogged $isqueued $is_ail_core $isscripted $isflasked $isfeeded $iscrawler killed."$DEFAULT
+        echo -e $GREEN"\t* $islogged $isqueued $is_ail_core $isscripted $isflasked $isfeeded $iscrawler $is_ail_2_ail killed."$DEFAULT
     else
         echo -e $RED"\t* No script to kill"$DEFAULT
     fi

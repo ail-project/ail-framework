@@ -58,13 +58,16 @@ class Retro_Hunt(AbstractModule):
                 # end_time
 
     def compute(self, task_uuid):
-        print(task_uuid)
+        self.redis_logger.warning(f'{self.module_name}, starting Retro hunt task {task_uuid}')
+        print(f'starting Retro hunt task {task_uuid}')
         self.task_uuid = task_uuid
         self.progress = 0
         # First launch
         # restart
         rule = Tracker.get_retro_hunt_task_rule(task_uuid, r_compile=True)
+
         timeout = Tracker.get_retro_hunt_task_timeout(task_uuid)
+        self.redis_logger.debug(f'{self.module_name}, Retro Hunt rule {task_uuid} timeout {timeout}')
         sources = Tracker.get_retro_hunt_task_sources(task_uuid, r_sort=True)
 
         self.date_from = Tracker.get_retro_hunt_task_date_from(task_uuid)
@@ -85,12 +88,15 @@ class Retro_Hunt(AbstractModule):
             # # TODO: Filter previous item
             for dir in dirs_date:
                 print(dir)
+                self.redis_logger.debug(f'{self.module_name}, Retro Hunt searching in directory {dir}')
                 l_obj = Tracker.get_items_to_analyze(dir)
                 for id in l_obj:
                     #print(f'{dir} / {id}')
                     self.item = Item(id)
                     # save current item in cache
                     Tracker.set_cache_retro_hunt_task_id(task_uuid, id)
+
+                    self.redis_logger.debug(f'{self.module_name}, Retro Hunt rule {task_uuid}, searching item {id}')
 
                     yara_match = rule.match(data=self.item.get_content(), callback=self.yara_rules_match, which_callbacks=yara.CALLBACK_MATCHES, timeout=timeout)
 
@@ -120,6 +126,8 @@ class Retro_Hunt(AbstractModule):
         Tracker.set_retro_hunt_nb_match(task_uuid)
         Tracker.clear_retro_hunt_task_cache(task_uuid)
 
+        print(f'Retro Hunt {task_uuid} completed')
+        self.redis_logger.warning(f'{self.module_name}, Retro Hunt {task_uuid} completed')
 
         # # TODO: stop
 
@@ -133,10 +141,12 @@ class Retro_Hunt(AbstractModule):
         #     Tracker.set_retro_hunt_task_progress(task_uuid, progress)
 
     def yara_rules_match(self, data):
-        #print(data)
-
-        task_uuid = data['namespace']
         id = self.item.get_id()
+        #print(data)
+        task_uuid = data['namespace']
+
+        self.redis_logger.info(f'{self.module_name}, Retro hunt {task_uuid} match found:    {id}')
+        print(f'Retro hunt {task_uuid} match found:    {id}')
 
         Tracker.save_retro_hunt_match(task_uuid, id)
 

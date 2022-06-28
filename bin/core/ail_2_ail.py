@@ -1028,8 +1028,9 @@ def api_create_sync_queue(json_dict):
     tags = json_dict.get('tags')
     if not tags:
         return {"status": "error", "reason": "no tags provided"}, 400
-    if not Tag.are_enabled_tags(tags):
-        return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
+    # FIXME: add custom tags
+    # if not Tag.are_enabled_tags(tags):
+    #     return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
 
     max_size = json_dict.get('max_size')
     if not max_size:
@@ -1064,8 +1065,9 @@ def api_edit_sync_queue(json_dict):
 
     tags = json_dict.get('tags')
     if tags:
-        if not Tag.are_enabled_tags(tags):
-            return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
+        # FIXME: add custom tags
+        # if not Tag.are_enabled_tags(tags):
+        #     return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
         edit_sync_queue_filter_tags(queue_uuid, tags)
 
     max_size = json_dict.get('max_size')
@@ -1203,11 +1205,13 @@ def create_ail_stream(Object):
                   'type': Object.get_type()}
 
     # OBJECT META
-    ail_stream['meta'] = {'ail_mime-type': 'text/plain'}
+    ail_stream['meta'] = {'ail:mime-type': 'text/plain'}
+    ail_stream['meta']['compress'] = 'gzip'
+    ail_stream['meta']['encoding'] = 'base64'
     ail_stream['meta']['ail:id'] = Object.get_id()
-    ail_stream['meta']['ail:tags'] = Object.get_tags()
-    # GLOBAL PAYLOAD
-    ail_stream['meta']['ail:uuid'] = get_ail_uuid()
+    ail_stream['meta']['tags'] = Object.get_tags()
+    # GLOBAL META
+    ail_stream['meta']['uuid_org'] = get_ail_uuid()
 
     # OBJECT PAYLOAD
     ail_stream['payload'] = Object.get_ail_2_ail_payload()

@@ -11,11 +11,15 @@ import yara
 import datetime
 import base64
 
+from ail_typo_squatting import runAll
+import math
+
 
 from flask import escape
 
 sys.path.append(os.path.join(os.environ['AIL_BIN'], 'packages/'))
 import Date
+import Tag
 
 sys.path.append(os.path.join(os.environ['AIL_BIN'], 'lib/'))
 import ConfigLoader
@@ -26,6 +30,10 @@ r_cache = config_loader.get_redis_conn("Redis_Cache")
 
 r_serv_db = config_loader.get_redis_conn("ARDB_DB")
 r_serv_tracker = config_loader.get_redis_conn("ARDB_Tracker")
+
+items_dir = config_loader.get_config_str("Directories", "pastes")
+if items_dir[-1] == '/':
+    items_dir = items_dir[:-1]
 config_loader = None
 
 email_regex = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,6}'
@@ -75,8 +83,8 @@ def get_all_tracker_type():
 def get_all_tracker_uuid():
     return r_serv_tracker.smembers(f'trackers:all')
 
-def get_all_tracker_by_type(tracker_type):
-    r_serv_tracker.smembers(f'trackers:all:{tracker_type}')
+def get_all_tracker_uuid_by_type(tracker_type):
+    return r_serv_tracker.smembers(f'trackers:all:{tracker_type}')
 
 # def get_all_tracker():
 #     l_keys_name = []
@@ -211,6 +219,20 @@ def get_tracker_items_by_daterange(tracker_uuid, date_from, date_to):
                     all_item_id |= r_serv_tracker.smembers(f'tracker:item:{tracker_uuid}:{date_day}')
     return all_item_id
 
+def get_tracker_typosquatting_domains(tracker_uuid):
+    return r_serv_tracker.smembers(f'tracker:typosquatting:{tracker_uuid}')
+
+def get_typosquatting_tracked_words_list():
+    all_typo = dict()
+    typos_uuid = get_all_tracker_uuid_by_type("typosquatting")
+
+    for typo_uuid in typos_uuid:
+        tracker = get_tracker_by_uuid(typo_uuid)
+        all_typo[tracker] = get_tracker_typosquatting_domains(typo_uuid)
+
+    return all_typo
+
+
 def add_tracked_item(tracker_uuid, item_id):
     item_date = item_basic.get_item_date(item_id)
     # track item
@@ -248,7 +270,6 @@ def update_tracker_daterange(tracker_uuid, date, op='add'):
     if op == 'del':
         pass
 
-
 def remove_tracked_item(item_id):
     item_date = item_basic.get_item_date(item_id)
     for tracker_uuid in get_item_all_trackers_uuid(item_id):
@@ -266,6 +287,11 @@ def is_obj_tracked(obj_type, subtype, id):
 
 def get_obj_all_trackers(obj_type, subtype, id):
     return r_serv_tracker.smembers(f'obj:trackers:{obj_type}:{obj_id}')
+
+# # TODO: ADD all Objects + Subtypes
+def delete_obj_trackers(obj_type, subtype, id):
+    if obj_type == 'item':
+        remove_tracked_item(id)
 
 def get_email_subject(tracker_uuid):
     tracker_description = get_tracker_description(tracker_uuid)
@@ -400,6 +426,15 @@ def api_validate_tracker_to_add(tracker , tracker_type, nb_words=1):
 
             tracker = ",".join(words_set)
             tracker = "{};{}".format(tracker, nb_words)
+    elif tracker_type == 'typosquatting':
+        tracker = tracker.lower()
+        # Take only the first term
+        domain = tracker.split(" ")
+        if len(domain) > 1:
+            return {"status": "error", "reason": "Only one domain is accepted at a time"}, 400
+        if not "." in tracker:
+            return {"status": "error", "reason": "Invalid domain name"}, 400
+            
 
     elif tracker_type=='yara_custom':
         if not is_valid_yara_rule(tracker):
@@ -439,6 +474,12 @@ def create_tracker(tracker, tracker_type, user_id, level, tags, mails, descripti
                     os.remove(filepath)
         tracker = save_yara_rule(tracker_type, tracker, tracker_uuid=tracker_uuid)
         tracker_type = 'yara'
+
+    elif tracker_type == 'typosquatting':
+        domain = tracker.split(" ")[0]
+        typo_generation = runAll(domain=domain, limit=math.inf, formatoutput="text", pathOutput="-", verbose=False)
+        for typo in typo_generation:
+            r_serv_tracker.sadd(f'tracker:typosquatting:{tracker_uuid}', typo)
 
     # create metadata
     r_serv_tracker.hset('tracker:{}'.format(tracker_uuid), 'tracked', tracker)
@@ -1039,7 +1080,10 @@ def get_retro_hunt_dir_day_to_analyze(task_uuid, date, filter_last=False, source
 
 # # TODO: move me
 def get_items_to_analyze(dir, last=None):
-    full_dir = os.path.join(os.environ['AIL_HOME'], 'PASTES', dir) # # TODO: # FIXME: use item config dir
+    if items_dir == 'PASTES':
+        full_dir = os.path.join(os.environ['AIL_HOME'], 'PASTES', dir)
+    else:
+        full_dir = os.path.join(items_dir, dir)
     if os.path.isdir(full_dir):
         all_items = sorted([os.path.join(dir, f) for f in os.listdir(full_dir) if os.path.isfile(os.path.join(full_dir, f))])
         # remove processed items
@@ -1265,7 +1309,21 @@ def api_delete_retro_hunt_task(task_uuid):
     else:
         return (delete_retro_hunt_task(task_uuid), 200)
 
-# if __name__ == '__main__':
+#### DB FIX ####
+def get_trackers_custom_tags():
+    tags = set()
+    for tracker_uuid in get_all_tracker_uuid():
+        for tag in get_tracker_tags(tracker_uuid):
+            tags.add(tag)
+    for task_uuid in get_all_retro_hunt_tasks():
+        for tag in get_retro_hunt_task_tags(task_uuid):
+            tags.add(tag)
+    return tags
+
+#### -- ####
+
+if __name__ == '__main__':
+    print(get_trackers_custom_tags())
     # fix_all_tracker_uuid_list()
     # res = get_all_tracker_uuid()
     # print(len(res))
