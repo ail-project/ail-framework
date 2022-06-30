@@ -6,6 +6,9 @@ import sys
 import json
 import redis
 from TorSplashCrawler import TorSplashCrawler
+from I2pSplashCrawler import I2pSplashCrawler
+
+from pyfaup.faup import Faup
 
 sys.path.append(os.path.join(os.environ['AIL_BIN'], 'lib/'))
 import ConfigLoader
@@ -17,6 +20,8 @@ if __name__ == '__main__':
         print('usage:', 'tor_crawler.py', 'uuid')
         exit(1)
 
+
+    faup = Faup()
 
     config_loader = ConfigLoader.ConfigLoader()
     redis_cache = config_loader.get_redis_conn("Redis_Cache")
@@ -45,9 +50,27 @@ if __name__ == '__main__':
 
     redis_cache.delete('crawler_request:{}'.format(uuid))
 
+
+    # get crawler_mode
+    faup.decode(url)
+    unpack_url = faup.get()
+
     try:
-        crawler = TorSplashCrawler(splash_url, crawler_options)
-        crawler.crawl(splash_url, service_type, crawler_options, date, requested_mode, url, domain, port, cookies, original_item)
-    except Exception as e:
-        print(e)
-        print(e, file=sys.stderr)
+        tld = unpack_url['tld'].decode()
+    except:
+        tld = unpack_url['tld']
+
+    if tld == "i2p":
+        try:
+            crawler = I2pSplashCrawler(splash_url, crawler_options)
+            crawler.crawl(splash_url, service_type, crawler_options, date, requested_mode, url, domain, port, cookies, original_item)
+        except Exception as e:
+            print(e)
+            print(e, file=sys.stderr)
+    else:
+        try:
+            crawler = TorSplashCrawler(splash_url, crawler_options)
+            crawler.crawl(splash_url, service_type, crawler_options, date, requested_mode, url, domain, port, cookies, original_item)
+        except Exception as e:
+            print(e)
+            print(e, file=sys.stderr)
