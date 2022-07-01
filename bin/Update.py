@@ -431,7 +431,7 @@ if __name__ == "__main__":
                 for upper_tag in list_upper_tags_remote:
                     print('    {}{}{}: {}'.format(TERMINAL_BLUE, upper_tag[0], TERMINAL_DEFAULT, upper_tag[1]))
             print()
-            #update_ail(current_tag, list_upper_tags_remote, current_version_path, is_fork)
+            update_ail(current_tag, list_upper_tags_remote, current_version_path, is_fork)
 
         else:
             print('Please, commit your changes or stash them before you can update AIL')

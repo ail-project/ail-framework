@@ -324,7 +324,6 @@ class I2pSplashCrawler():
 
 
         def notbob(self, website, process, crawler, reload=False):
-            print(f"Splash_url: {self.splash_url}")
             website = self.process_url(website)
             print("\t" + website)
             if reload:
@@ -357,69 +356,45 @@ class I2pSplashCrawler():
                     print(e)
 
                 soup2 = BeautifulSoup(r.content, "html.parser")
-                title = soup2.find_all('title', limit=1)
-                if title:
-                    t = str(title[0])
-                    t = t[7:]
-                    t = t[:-8]
-
-                    if t == "Information: New Host Name":
-                        self.notbob(website, process, crawler, reload=True)
-                    elif t == "Website Unreachable":
-                        print("Not find with Notbob")
-                        self.i2pjump(website, process, crawler)
-                    elif t == "Warning: Destination Key Conflict":
-                        link = soup2.find_all("a", href=True)
-                        for l in link:
-                            if l.get_text() == f'Destination for {website} in address book':
-                                self.regular_request(l["href"], process, crawler)
-                    else:
-                        print(t)
-                        print("notbob")
-                        try:
-                            process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
-                            process.start()
-                        except Exception as e:
-                            print("notbob error process")
-                            print(e)
-
-                else:
-                    print("Not find with Notbob")
-                    self.i2pjump(website, process, crawler)
+                self.notBobBody(website, process, crawler, soup2)
             # Not find, try an other jump server
             else:
                 if not dead:
-                    title = soup.find_all('title', limit=1)
-                    if title:
-                        t = str(title[0])
-                        t = t[7:]
-                        t = t[:-8]
-
-                        if t == "Information: New Host Name":
-                            self.notbob(website, process, crawler, reload=True)
-                        elif t == "Website Unreachable":
-                            print("Not find with Notbob")
-                            self.i2pjump(website, process, crawler)
-                        elif t == "Warning: Destination Key Conflict":
-                            link = soup.find_all("a", href=True)
-                            for l in link:
-                                if l.get_text() == f'Destination for {website} in address book':
-                                    self.regular_request(l["href"], process, crawler)
-                        else:
-                            print(t)
-                            print("notbob2")
-                            try:
-                                process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
-                                process.start()
-                            except Exception as e:
-                                print("notbob error process")
-                                print(e)
-                    else:
-                        print("Not find with Notbob")
-                        self.i2pjump(website, process, crawler)
+                    self.notBobBody(website, process, crawler, soup)
                 else:
                     print("Not find with Notbob")
                     self.i2pjump(website, process, crawler)
+        
+        
+        def notBobBody(self, website, process, crawler, soup):
+            """notbob's body"""
+            title = soup.find_all('title', limit=1)
+            if title:
+                t = str(title[0])
+                t = t[7:]
+                t = t[:-8]
+
+                if t == "Information: New Host Name":
+                    self.notbob(website, process, crawler, reload=True)
+                elif t == "Website Unreachable":
+                    print("Not find with Notbob")
+                    self.i2pjump(website, process, crawler)
+                elif t == "Warning: Destination Key Conflict":
+                    link = soup.find_all("a", href=True)
+                    for l in link:
+                        if l.get_text() == f'Destination for {website} in address book':
+                            self.regular_request(l["href"], process, crawler)
+                else:
+                    print(t)
+                    try:
+                        process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
+                        process.start()
+                    except Exception as e:
+                        print("notbob error process")
+                        print(e)
+            else:
+                print("Not find with Notbob")
+                self.i2pjump(website, process, crawler)
 
 
         def i2pjump(self, website, process, crawler, reload=False):
@@ -498,68 +473,45 @@ class I2pSplashCrawler():
                     except Exception as e:
                         print("stati2p error")
                         print(e)
+
                     soup2 = BeautifulSoup(r.content, "html.parser")
-                    title = soup2.find_all('title', limit=1)
-
-                    if title:
-                        t = str(title[0])
-                        t = t[7:]
-                        t = t[:-8]
-
-                        if t == "Information: New Host Name":
-                            self.statsi2p(website, process, crawler, reload=True)
-                        elif t == "Website Unreachable":
-                            print("Not find with stati2p")
-                            self.regular_request(website, process, crawler)
-                        elif t == "Warning: Destination Key Conflict":
-                            link = soup2.find_all("a", href=True)
-                            for l in link:
-                                if l.get_text() == f'Destination for {website} in address book':
-                                    self.regular_request(l["href"], process, crawler)
-                        else:
-                            print(t)
-                            print("stati2p")
-                            try:
-                                process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
-                                process.start()
-                            except Exception as e:
-                                print("stati2p error process")
-                                print(e)
-                    else:
-                        print("Not find with stati2p")
-                        self.regular_request(website, process, crawler)
+                    self.statsi2pBody(website, process, crawler, soup2)
                 else:
                     print("Not find with stati2p")
                     self.regular_request(website, process, crawler)
             else:
-                title = soup.find_all('title', limit=1)
-                if title:
-                    t = str(title[0])
-                    t = t[7:]
-                    t = t[:-8]
+                self.statsi2pBody(website, process, crawler, soup)
+            
 
-                    if t == "Information: New Host Name":
-                        self.statsi2p(website, process, crawler, reload=True)
-                    elif t == "Website Unreachable":
-                        print("Not find with stati2p")
-                        self.regular_request(website, process, crawler)
-                    elif t == "Warning: Destination Key Conflict":
-                        link = soup.find_all("a", href=True)
-                        for l in link:
-                            if l.get_text() == f'Destination for {website} in address book':
-                                self.regular_request(l["href"], process, crawler)
-                    else:
-                        print(t)
-                        print("stati2p")
-                        try:
-                            process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
-                            process.start()
-                        except Exception as e:
-                            print("stati2p error process")
-                            print(e)
-                else:
+        def statsi2pBody(self, website, process, crawler, soup):
+            """stati2p's body"""
+            title = soup.find_all('title', limit=1)
+            if title:
+                t = str(title[0])
+                t = t[7:]
+                t = t[:-8]
+
+                if t == "Information: New Host Name":
+                    self.statsi2p(website, process, crawler, reload=True)
+                elif t == "Website Unreachable":
                     print("Not find with stati2p")
                     self.regular_request(website, process, crawler)
+                elif t == "Warning: Destination Key Conflict":
+                    link = soup.find_all("a", href=True)
+                    for l in link:
+                        if l.get_text() == f'Destination for {website} in address book':
+                            self.regular_request(l["href"], process, crawler)
+                else:
+                    print(t)
+                    try:
+                        process.crawl(crawler, splash_url=self.splash_url, type=self.domain_type, crawler_options=self.crawler_options, date=self.date, requested_mode=self.requested_mode, url=self.start_urls, domain=self.domains[0], port=self.port, cookies=self.cookies, original_item=self.original_item)
+                        process.start()
+                    except Exception as e:
+                        print("stati2p error process")
+                        print(e)
+            else:
+                print("Not find with stati2p")
+                self.regular_request(website, process, crawler)
 
 
         def regular_request(self, website, process, crawler, reload=False):
@@ -601,6 +553,7 @@ class I2pSplashCrawler():
                 print("Not find with regular request")
                 print("Exit...\n\n")
                 crawlers.save_test_ail_crawlers_result(False, 'HostNotFoundError: the remote host name was not found (invalid hostname)')
+
 
         def process_url(self, url):
             if "http://" == url[0:7]:
