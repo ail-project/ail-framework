@@ -54,6 +54,15 @@ def unpack_url(url):
         to_crawl['domain'] = url_unpack['domain']
     to_crawl['domain'] = to_crawl['domain'].lower()
 
+    if to_crawl['domain'] == "b32.i2p":
+        try:
+            subdomain = url_unpack['subdomain'].decode()
+        except:
+            subdomain = url_unpack['subdomain']
+
+        if subdomain:
+            subdomain.lower()
+            to_crawl['domain'] = f"{subdomain.split('.')[-1]}.{to_crawl['domain']}"
 
     # force lower case domain/subdomain (rfc4343)
     # # FIXME: # TODO: remove me
