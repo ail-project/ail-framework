@@ -79,16 +79,16 @@ sudo make install
 popd
 
 # ARDB #
-test ! -d ardb/ && git clone https://github.com/ail-project/ardb.git
-pushd ardb/
-make
-popd
+# test ! -d ardb/ && git clone https://github.com/ail-project/ardb.git
+# pushd ardb/
+# make
+# popd
 
 # KVROCKS #
-# test ! -d kvrocks/ && git clone https://github.com/bitleak/kvrocks.git
-# pushd kvrocks/
-# make -j4
-# popd
+test ! -d kvrocks/ && git clone https://github.com/bitleak/kvrocks.git
+pushd kvrocks/
+make -j4
+popd
 
 # Config File
 if [ ! -f configs/core.cfg ]; then
