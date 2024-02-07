@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
 # -*-coding:UTF-8 -*
 import json
+import logging
 import os
 import sys
-import time
 
 import yara
 
+from hashlib import sha256
 from operator import itemgetter
 
 sys.path.append(os.environ['AIL_BIN'])
@@ -15,6 +16,7 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib.objects import ail_objects
 from lib.objects.Items import Item
+from lib.objects.Titles import Title
 from lib import correlations_engine
 from lib import regex_helper
 from lib.ConfigLoader import ConfigLoader
@@ -27,6 +29,8 @@ from modules.Mail import Mail
 from modules.Onion import Onion
 from modules.Phone import Phone
 from modules.Tools import Tools
+
+logger = logging.getLogger()
 
 config_loader = ConfigLoader()
 r_cache = config_loader.get_redis_conn("Redis_Cache")
@@ -58,18 +62,31 @@ def get_correl_match(extract_type, obj_id, content):
     correl = correlations_engine.get_correlation_by_correl_type('item', '', obj_id, extract_type)
     to_extract = []
     map_subtype = {}
+    map_value_id = {}
     for c in correl:
         subtype, value = c.split(':', 1)
-        map_subtype[value] = subtype
-        to_extract.append(value)
+        if extract_type == 'title':
+            title = Title(value).get_content()
+            to_extract.append(title)
+            sha256_val = sha256(title.encode()).hexdigest()
+        else:
+            map_subtype[value] = subtype
+            to_extract.append(value)
+            sha256_val = sha256(value.encode()).hexdigest()
+        map_value_id[sha256_val] = value
     if to_extract:
         objs = regex_helper.regex_finditer(r_key, '|'.join(to_extract), obj_id, content)
         for obj in objs:
-            if map_subtype[obj[2]]:
+            if map_subtype.get(obj[2]):
                 subtype = map_subtype[obj[2]]
             else:
                 subtype = ''
-            extracted.append([obj[0], obj[1], obj[2], f'{extract_type}:{subtype}:{obj[2]}'])
+                sha256_val = sha256(obj[2].encode()).hexdigest()
+            value_id = map_value_id.get(sha256_val)
+            if not value_id:
+                logger.critical(f'Error module extractor: {sha256_val}\n{extract_type}\n{subtype}\n{value_id}\n{map_value_id}\n{objs}')
+                value_id = 'ERROR'
+            extracted.append([obj[0], obj[1], obj[2], f'{extract_type}:{subtype}:{value_id}'])
     return extracted
 
 def _get_yara_match(data):
@@ -87,9 +104,13 @@ def _get_word_regex(word):
 
 def convert_byte_offset_to_string(b_content, offset):
     byte_chunk = b_content[:offset + 1]
-    string_chunk = byte_chunk.decode()
-    offset = len(string_chunk) - 1
-    return offset
+    try:
+        string_chunk = byte_chunk.decode()
+        offset = len(string_chunk) - 1
+        return offset
+    except UnicodeDecodeError as e:
+        logger.error(f'Yara offset converter error, {str(e)}\n{offset}/{len(b_content)}')
+        return convert_byte_offset_to_string(b_content, offset - 1)
 
 
 # TODO RETRO HUNTS
@@ -155,6 +176,7 @@ def extract(obj_id, content=None):
 
     # CHECK CACHE
     cached = r_cache.get(f'extractor:cache:{obj_id}')
+    # cached = None
     if cached:
         r_cache.expire(f'extractor:cache:{obj_id}', 300)
         return json.loads(cached)
@@ -173,7 +195,7 @@ def extract(obj_id, content=None):
             if matches:
                 extracted = extracted + matches
 
-    for obj_t in ['cve', 'cryptocurrency', 'username']:  # Decoded, PGP->extract bloc
+    for obj_t in ['cve', 'cryptocurrency', 'title', 'username']:  # Decoded, PGP->extract bloc
         matches = get_correl_match(obj_t, obj_id, content)
         if matches:
             extracted = extracted + matches

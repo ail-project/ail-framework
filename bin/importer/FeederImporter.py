@@ -56,6 +56,8 @@ class FeederImporter(AbstractImporter):
         feeders = [f[:-3] for f in os.listdir(feeder_dir) if os.path.isfile(os.path.join(feeder_dir, f))]
         self.feeders = {}
         for feeder in feeders:
+            if feeder == 'abstract_chats_feeder':
+                continue
             print(feeder)
             part = feeder.split('.')[-1]
             # import json importer class
@@ -87,13 +89,27 @@ class FeederImporter(AbstractImporter):
         feeder_name = feeder.get_name()
         print(f'importing: {feeder_name} feeder')
 
-        item_id = feeder.get_item_id()
+        # Get Data object:
+        data_obj = feeder.get_obj()
+
         # process meta
         if feeder.get_json_meta():
-            feeder.process_meta()
-        gzip64_content = feeder.get_gzip64_content()
+            objs = feeder.process_meta()
+            if objs is None:
+                objs = set()
+        else:
+            objs = set()
 
-        return f'{feeder_name} {item_id} {gzip64_content}'
+        if data_obj:
+            objs.add(data_obj)
+
+        for obj in objs:
+            if obj.type == 'item':  # object save on disk as file (Items)
+                gzip64_content = feeder.get_gzip64_content()
+                return obj, f'{feeder_name} {gzip64_content}'
+            else:  # Messages save on DB
+                if obj.exists() and obj.type != 'chat':
+                    return obj, f'{feeder_name}'
 
 
 class FeederModuleImporter(AbstractModule):
@@ -112,11 +128,14 @@ class FeederModuleImporter(AbstractModule):
     def compute(self, message):
         # TODO HANDLE Invalid JSON
         json_data = json.loads(message)
-        relay_message = self.importer.importer(json_data)
-        self.add_message_to_queue(relay_message)
+        # TODO multiple objs + messages
+        obj, relay_message = self.importer.importer(json_data)
+        ####
+        self.add_message_to_queue(obj=obj, message=relay_message)
 
 
 # Launch Importer
 if __name__ == '__main__':
     module = FeederModuleImporter()
+    # module.debug = True
     module.run()

@@ -20,26 +20,28 @@ if [ -e "${DIR}/AILENV/bin/python" ]; then
     export AIL_VENV=${AIL_HOME}/AILENV/
     . ./AILENV/bin/activate
 else
-    echo "Please make sure you have a AIL-framework environment, au revoir"
+    echo "Please make sure AILENV is installed"
     exit 1
 fi
 
 export PATH=$AIL_VENV/bin:$PATH
 export PATH=$AIL_HOME:$PATH
 export PATH=$AIL_REDIS:$PATH
-export PATH=$AIL_ARDB:$PATH
+export PATH=$AIL_KVROCKS:$PATH
 export PATH=$AIL_BIN:$PATH
 export PATH=$AIL_FLASK:$PATH
 
-isredis=`screen -ls | egrep '[0-9]+.Redis_AIL' | cut -d. -f1`
-isardb=`screen -ls | egrep '[0-9]+.ARDB_AIL' | cut -d. -f1`
-iskvrocks=`screen -ls | egrep '[0-9]+.KVROCKS_AIL' | cut -d. -f1`
-islogged=`screen -ls | egrep '[0-9]+.Logging_AIL' | cut -d. -f1`
-is_ail_core=`screen -ls | egrep '[0-9]+.Core_AIL' | cut -d. -f1`
-is_ail_2_ail=`screen -ls | egrep '[0-9]+.AIL_2_AIL' | cut -d. -f1`
-isscripted=`screen -ls | egrep '[0-9]+.Script_AIL' | cut -d. -f1`
-isflasked=`screen -ls | egrep '[0-9]+.Flask_AIL' | cut -d. -f1`
-isfeeded=`screen -ls | egrep '[0-9]+.Feeder_Pystemon' | cut -d. -f1`
+function check_screens {
+    isredis=`screen -ls | egrep '[0-9]+.Redis_AIL' | cut -d. -f1`
+    isardb=`screen -ls | egrep '[0-9]+.ARDB_AIL' | cut -d. -f1`
+    iskvrocks=`screen -ls | egrep '[0-9]+.KVROCKS_AIL' | cut -d. -f1`
+    islogged=`screen -ls | egrep '[0-9]+.Logging_AIL' | cut -d. -f1`
+    is_ail_core=`screen -ls | egrep '[0-9]+.Core_AIL' | cut -d. -f1`
+    is_ail_2_ail=`screen -ls | egrep '[0-9]+.AIL_2_AIL' | cut -d. -f1`
+    isscripted=`screen -ls | egrep '[0-9]+.Script_AIL' | cut -d. -f1`
+    isflasked=`screen -ls | egrep '[0-9]+.Flask_AIL' | cut -d. -f1`
+    isfeeded=`screen -ls | egrep '[0-9]+.Feeder_Pystemon' | cut -d. -f1`
+}
 
 function helptext {
     echo -e $YELLOW"
@@ -59,7 +61,6 @@ function helptext {
     - All the queuing modules.
     - All the processing modules.
     - All Redis in memory servers.
-    - All ARDB on disk servers.
     - All KVROCKS servers.
     "$DEFAULT"
     (Inside screen Daemons)
@@ -69,6 +70,7 @@ function helptext {
     LAUNCH.sh
       [-l  | --launchAuto]         LAUNCH DB + Scripts
       [-k  | --killAll]            Kill DB + Scripts
+      [-r  | --restart]            Restart
       [-ks | --killscript]         Scripts
       [-u  | --update]             Update AIL
       [-ut | --thirdpartyUpdate]   Update UI/Frontend
@@ -265,12 +267,15 @@ function launching_scripts {
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "SQLInjectionDetection" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./SQLInjectionDetection.py; read x"
     sleep 0.1
-    screen -S "Script_AIL" -X screen -t "LibInjection" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./LibInjection.py; read x"
-    sleep 0.1
-    screen -S "Script_AIL" -X screen -t "Zerobins" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Zerobins.py; read x"
-    sleep 0.1
+#    screen -S "Script_AIL" -X screen -t "LibInjection" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./LibInjection.py; read x"
+#    sleep 0.1
+#    screen -S "Script_AIL" -X screen -t "Pasties" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Pasties.py; read x"
+#    sleep 0.1
 
     screen -S "Script_AIL" -X screen -t "MISP_Thehive_Auto_Push" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./MISP_Thehive_Auto_Push.py; read x"
+    sleep 0.1
+
+    screen -S "Script_AIL" -X screen -t "Exif" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Exif.py; read x"
     sleep 0.1
 
     ##################################
@@ -607,7 +612,7 @@ function launch_all {
 
 function menu_display {
 
-  options=("Redis" "Ardb" "Kvrocks" "Logs" "Scripts" "Flask" "Killall" "Update" "Update-config" "Update-thirdparty")
+  options=("Redis" "Kvrocks" "Logs" "Scripts" "Flask" "Killall" "Update" "Update-config" "Update-thirdparty")
 
   menu() {
       echo "What do you want to Launch?:"
@@ -634,9 +639,6 @@ function menu_display {
           case ${options[i]} in
               Redis)
                   launch_redis;
-                  ;;
-              Ardb)
-                  launch_ardb;
                   ;;
               Kvrocks)
                   launch_kvrocks;
@@ -679,31 +681,38 @@ function menu_display {
 }
 
 #echo "$@"
-
+check_screens;
 while [ "$1" != "" ]; do
     case $1 in
-        -l | --launchAuto )             launch_all "automatic";
+        -l | --launchAuto )             check_screens;
+                                        launch_all "automatic";
                                         ;;
-        -lr | --launchRedis )           launch_redis;
+        -lr | --launchRedis )           check_screens;
+                                        launch_redis;
                                         ;;
         -la | --launchARDB )            launch_ardb;
                                         ;;
-        -lk | --launchKVROCKS )         launch_kvrocks;
+        -lk | --launchKVROCKS )         check_screens;
+                                        launch_kvrocks;
                                         ;;
         -lrv | --launchRedisVerify )    launch_redis;
                                         wait_until_redis_is_ready;
-                                        ;;
-        -lav | --launchARDBVerify )     launch_ardb;
-                                        wait_until_ardb_is_ready;
                                         ;;
         -lkv | --launchKVORCKSVerify )  launch_kvrocks;
                                         wait_until_kvrocks_is_ready;
                                         ;;
         --set_kvrocks_namespaces )      set_kvrocks_namespaces;
                                         ;;
-        -k | --killAll )                killall;
+        -k | --killAll )                check_screens;
+                                        killall;
                                         ;;
-        -ks | --killscript )            killscript;
+        -r | --restart )                killall;
+                                        sleep 0.1;
+                                        check_screens;
+                                        launch_all "automatic";
+                                        ;;
+        -ks | --killscript )            check_screens;
+                                        killscript;
                                         ;;
         -m | --menu )                   menu_display;
                                         ;;

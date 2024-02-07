@@ -7,6 +7,7 @@ Base Class for AIL Objects
 # Import External packages
 ##################################
 import os
+import re
 import sys
 from abc import abstractmethod, ABC
 
@@ -44,8 +45,14 @@ class AbstractDaterangeObject(AbstractObject, ABC):
     def exists(self):
         return r_object.exists(f'meta:{self.type}:{self.id}')
 
+    def _get_field(self, field): # TODO remove me (NEW in abstract)
+        return r_object.hget(f'meta:{self.type}:{self.id}', field)
+
+    def _set_field(self, field, value): # TODO remove me (NEW in abstract)
+        return r_object.hset(f'meta:{self.type}:{self.id}', field, value)
+
     def get_first_seen(self, r_int=False):
-        first_seen = r_object.hget(f'meta:{self.type}:{self.id}', 'first_seen')
+        first_seen = self._get_field('first_seen')
         if r_int:
             if first_seen:
                 return int(first_seen)
@@ -55,7 +62,7 @@ class AbstractDaterangeObject(AbstractObject, ABC):
             return first_seen
 
     def get_last_seen(self, r_int=False):
-        last_seen = r_object.hget(f'meta:{self.type}:{self.id}', 'last_seen')
+        last_seen = self._get_field('last_seen')
         if r_int:
             if last_seen:
                 return int(last_seen)
@@ -64,8 +71,8 @@ class AbstractDaterangeObject(AbstractObject, ABC):
         else:
             return last_seen
 
-    def get_nb_seen(self):
-        return self.get_nb_correlation('item')
+    def get_nb_seen(self): # TODO REPLACE ME -> correlation image
+        return self.get_nb_correlation('item') + self.get_nb_correlation('message')
 
     def get_nb_seen_by_date(self, date):
         nb = r_object.zscore(f'{self.type}:date:{date}', self.id)
@@ -75,18 +82,19 @@ class AbstractDaterangeObject(AbstractObject, ABC):
             return int(nb)
 
     def _get_meta(self, options=[]):
-        meta_dict = {'first_seen': self.get_first_seen(),
-                     'last_seen': self.get_last_seen(),
-                     'nb_seen': self.get_nb_seen()}
+        meta_dict = self.get_default_meta()
+        meta_dict['first_seen'] = self.get_first_seen()
+        meta_dict['last_seen'] = self.get_last_seen()
+        meta_dict['nb_seen'] = self.get_nb_seen()
         if 'sparkline' in options:
             meta_dict['sparkline'] = self.get_sparkline()
         return meta_dict
 
     def set_first_seen(self, first_seen):
-        r_object.hset(f'meta:{self.type}:{self.id}', 'first_seen', first_seen)
+        self._set_field('first_seen', first_seen)
 
     def set_last_seen(self, last_seen):
-        r_object.hset(f'meta:{self.type}:{self.id}', 'last_seen', last_seen)
+        self._set_field('last_seen', last_seen)
 
     def update_daterange(self, date):
         date = int(date)
@@ -117,9 +125,7 @@ class AbstractDaterangeObject(AbstractObject, ABC):
     def _add_create(self):
         r_object.sadd(f'{self.type}:all', self.id)
 
-    # TODO don't increase nb if same hash in item with different encoding
-    # if hash already in item
-    def _add(self, date, item_id):
+    def _add(self, date, obj): # TODO OBJ=None
         if not self.exists():
             self._add_create()
             self.set_first_seen(date)
@@ -128,22 +134,132 @@ class AbstractDaterangeObject(AbstractObject, ABC):
             self.update_daterange(date)
         update_obj_date(date, self.type)
 
-        # NB Object seen by day
-        if not self.is_correlated('item', '', item_id):  # if decoded not already in object
-            r_object.zincrby(f'{self.type}:date:{date}', 1, self.id)
+        r_object.zincrby(f'{self.type}:date:{date}', 1, self.id)
 
-        # Correlations
-        self.add_correlation('item', '', item_id)
-        if is_crawled(item_id):  # Domain
-            domain = get_item_domain(item_id)
-            self.add_correlation('domain', '', domain)
+        if obj:
+            # Correlations
+            self.add_correlation(obj.type, obj.get_subtype(r_str=True), obj.get_id())
+
+            if obj.type == 'item':
+                item_id = obj.get_id()
+                # domain
+                if is_crawled(item_id):
+                    domain = get_item_domain(item_id)
+                    self.add_correlation('domain', '', domain)
+
+    def add(self, date, obj):
+        self._add(date, obj)
 
     # TODO:ADD objects + Stats
-    def _create(self, first_seen, last_seen):
-        self.set_first_seen(first_seen)
-        self.set_last_seen(last_seen)
+    def _create(self, first_seen=None, last_seen=None):
+        if first_seen:
+            self.set_first_seen(first_seen)
+        if last_seen:
+            self.set_last_seen(last_seen)
         r_object.sadd(f'{self.type}:all', self.id)
 
     # TODO
     def _delete(self):
         pass
+
+
+class AbstractDaterangeObjects(ABC):
+    """
+    Abstract Daterange Objects
+    """
+
+    def __init__(self, obj_type, obj_class):
+        """ Abstract for Daterange Objects
+
+        :param obj_type: object type (item, ...)
+        :param obj_class: object python class (Item, ...)
+        """
+        self.type = obj_type
+        self.obj_class = obj_class
+
+    def get_ids(self):
+        return r_object.smembers(f'{self.type}:all')
+
+    # def get_ids_iterator(self):
+    #     return r_object.sscan_iter(r_object, f'{self.type}:all')
+
+    def get_by_date(self, date):
+        return r_object.zrange(f'{self.type}:date:{date}', 0, -1)
+
+    def get_nb_by_date(self, date):
+        return r_object.zcard(f'{self.type}:date:{date}')
+
+    def get_by_daterange(self, date_from, date_to):
+        obj_ids = set()
+        for date in Date.substract_date(date_from, date_to):
+            obj_ids = obj_ids | set(self.get_by_date(date))
+        return obj_ids
+
+    def get_metas(self, obj_ids, options=set()):
+        dict_obj = {}
+        for obj_id in obj_ids:
+            obj = self.obj_class(obj_id)
+            dict_obj[obj_id] = obj.get_meta(options=options)
+        return dict_obj
+
+    @abstractmethod
+    def sanitize_id_to_search(self, id_to_search):
+        return id_to_search
+
+    def search_by_id(self, name_to_search, r_pos=False, case_sensitive=True):
+        objs = {}
+        if case_sensitive:
+            flags = 0
+        else:
+            flags = re.IGNORECASE
+        # for subtype in subtypes:
+        r_name = self.sanitize_id_to_search(name_to_search)
+        if not name_to_search or isinstance(r_name, dict):
+            return objs
+        r_name = re.compile(r_name, flags=flags)
+        for obj_id in self.get_ids():   # TODO REPLACE ME WITH AN ITERATOR
+            res = re.search(r_name, obj_id)
+            if res:
+                objs[obj_id] = {}
+                if r_pos:
+                    objs[obj_id]['hl-start'] = res.start()
+                    objs[obj_id]['hl-end'] = res.end()
+        return objs
+
+    def sanitize_content_to_search(self, content_to_search):
+        return content_to_search
+
+    def search_by_content(self, content_to_search, r_pos=False, case_sensitive=True):
+        objs = {}
+        if case_sensitive:
+            flags = 0
+        else:
+            flags = re.IGNORECASE
+        # for subtype in subtypes:
+        r_search = self.sanitize_content_to_search(content_to_search)
+        if not r_search or isinstance(r_search, dict):
+            return objs
+        r_search = re.compile(r_search, flags=flags)
+        for obj_id in self.get_ids():  # TODO REPLACE ME WITH AN ITERATOR
+            obj = self.obj_class(obj_id)
+            content = obj.get_content()
+            res = re.search(r_search, content)
+            if res:
+                objs[obj_id] = {}
+                if r_pos:  # TODO ADD CONTENT ????
+                    objs[obj_id]['hl-start'] = res.start()
+                    objs[obj_id]['hl-end'] = res.end()
+                    objs[obj_id]['content'] = content
+        return objs
+
+    def api_get_chart_nb_by_daterange(self, date_from, date_to):
+        date_type = []
+        for date in Date.substract_date(date_from, date_to):
+            d = {'date': f'{date[0:4]}-{date[4:6]}-{date[6:8]}',
+                 self.type: self.get_nb_by_date(date)}
+            date_type.append(d)
+        return date_type
+
+    def api_get_meta_by_daterange(self, date_from, date_to):
+        date = Date.sanitise_date_range(date_from, date_to)
+        return self.get_metas(self.get_by_daterange(date['date_from'], date['date_to']), options={'sparkline'})

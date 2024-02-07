@@ -83,6 +83,13 @@ def crawler_dashboard_json():
     return jsonify({'crawlers_status': crawlers_status,
                     'stats': crawlers_latest_stats})
 
+@crawler_splash.route("/crawlers/dashboard/captures/delete", methods=['GET'])
+@login_required
+@login_admin
+def crawlers_dashboard_captures_delete():
+    crawlers.delete_captures()
+    return redirect(url_for('crawler_splash.crawlers_dashboard'))
+
 
 @crawler_splash.route("/crawlers/manual", methods=['GET'])
 @login_required
@@ -96,7 +103,8 @@ def manual():
                            is_manager_connected=crawlers.get_lacus_connection_metadata(),
                            crawlers_types=crawlers_types,
                            proxies=proxies,
-                           l_cookiejar=l_cookiejar)
+                           l_cookiejar=l_cookiejar,
+                           tags_selector_data=Tag.get_tags_selector_data())
 
 
 @crawler_splash.route("/crawlers/send_to_spider", methods=['POST'])
@@ -112,6 +120,34 @@ def send_to_spider():
     har = request.form.get('har')
     depth_limit = request.form.get('depth_limit')
     cookiejar_uuid = request.form.get('cookiejar')
+
+    # TAGS
+    tags = request.form.get("tags", [])
+    taxonomies_tags = request.form.get('taxonomies_tags')
+    if taxonomies_tags:
+        try:
+            taxonomies_tags = json.loads(taxonomies_tags)
+        except:
+            taxonomies_tags = []
+    else:
+        taxonomies_tags = []
+    galaxies_tags = request.form.get('galaxies_tags')
+    if galaxies_tags:
+        try:
+            galaxies_tags = json.loads(galaxies_tags)
+        except:
+            galaxies_tags = []
+    else:
+        galaxies_tags = []
+    # custom tags
+    if tags:
+        tags = tags.split()
+    else:
+        tags = []
+    escaped = []
+    for tag in tags:
+        escaped.append(tag)
+    tags = escaped + taxonomies_tags + galaxies_tags
 
     # Frequency
     if request.form.get('crawler_scheduler'):
@@ -147,6 +183,8 @@ def send_to_spider():
         data['proxy'] = proxy
     if cookiejar_uuid:
         data['cookiejar'] = cookiejar_uuid
+    if tags:
+        data['tags'] = tags
     # print(data)
     res = crawlers.api_add_crawler_task(data, user_id=user_id)
 
@@ -163,6 +201,7 @@ def scheduler_dashboard():
     # print(schedulers)
     # TODO list currently queued ?
     return render_template("crawler_scheduler_dashboard.html",
+                           bootstrap_label=bootstrap_label,
                            schedulers=schedulers,
                            is_manager_connected=crawlers.get_lacus_connection_metadata())
 
@@ -176,6 +215,7 @@ def schedule_show():
         abort(404)
     meta = schedule.get_meta(ui=True)
     return render_template("crawler_schedule_uuid.html",
+                           bootstrap_label=bootstrap_label,
                            meta=meta)
 
 @crawler_splash.route("/crawlers/schedule/delete", methods=['GET'])
@@ -239,6 +279,7 @@ def crawlers_last_domains():
         domain, epoch = domain_row.split(':', 1)
         dom = Domains.Domain(domain)
         meta = dom.get_meta()
+        meta['last'] = datetime.fromtimestamp(int(epoch)).strftime("%Y/%m/%d %H:%M.%S")
         meta['epoch'] = epoch
         meta['status_epoch'] = dom.is_up_by_epoch(epoch)
         domains.append(meta)

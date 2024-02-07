@@ -6,6 +6,7 @@ hash = HASHS
 crawled = crawled
 har = CRAWLED_SCREENSHOT
 screenshot = CRAWLED_SCREENSHOT/screenshot
+images = IMAGES
 
 wordtrending_csv = var/www/static/csv/wordstrendingdata
 wordsfile = files/wordfile
@@ -45,6 +46,10 @@ sender = sender@example.com
 sender_host = smtp.example.com
 sender_port = 1337
 sender_pw = None
+# Only needed for SMTP over SSL if the mail server don't support TLS (used by default). use this option to validate the server certificate.
+cert_required = False
+# Only needed for SMTP over SSL if you want to validate your self signed certificate for SSL
+ca_file =
 # Only needed when the credentials for email server needs a username instead of an email address
 #sender_user = sender
 sender_user =
@@ -154,6 +159,11 @@ host = localhost
 port = 6381
 db = 0
 
+[Redis_Process]
+host = localhost
+port = 6381
+db = 2
+
 [Redis_Mixer_Cache]
 host = localhost
 port = 6381
@@ -186,6 +196,16 @@ host = localhost
 port = 6383
 password = ail_objs
 
+[Kvrocks_Relationships]
+host = localhost
+port = 6383
+password = ail_rels
+
+[Kvrocks_Timeline]
+host = localhost
+port = 6383
+password = ail_tls
+
 [Kvrocks_Stats]
 host = localhost
 port = 6383
@@ -207,9 +227,12 @@ password = ail_trackers
 cc_critical = DE
 
 [DomClassifier]
-cc = DE
-cc_tld = r'\.de$'
+#cc = DE
+#cc_tld = r'\.de$'
+cc =
+cc_tld =
 dns = 8.8.8.8
+
 
 [Mail]
 dns = 8.8.8.8
@@ -246,6 +269,11 @@ default_depth_limit = 1
 default_har = True
 default_screenshot = True
 onion_proxy = onion.foundation
+ail_url_to_push_onion_discovery =
+ail_key_to_push_onion_discovery =
+
+[Translation]
+libretranslate = 
 
 [IP]
 # list of comma-separated CIDR that you wish to be alerted for. e.g:

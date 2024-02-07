@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*-coding:UTF-8 -*
 
-'''
+"""
     Flask functions and routes for the rest api
-'''
+"""
 
 import os
 import re
@@ -27,7 +27,7 @@ from packages import Import_helper
 from importer.FeederImporter import api_add_json_feeder_to_queue
 
 
-from flask import jsonify, request, Blueprint, redirect, url_for, Response, escape
+from flask import jsonify, request, Blueprint, redirect, url_for, Response
 
 from functools import wraps
 
@@ -508,6 +508,7 @@ def get_item_cryptocurrency_bitcoin():
 # # # # # # # # # # # # # #        CRAWLER      # # # # # # # # # # # # # # # #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # # TODO: ADD RESULT JSON Response
+# @restApi.route("api/v1/crawler/task/add", methods=['POST'])
 @restApi.route("api/v1/add/crawler/task", methods=['POST'])
 @token_required('analyst')
 def add_crawler_task():
@@ -515,6 +516,20 @@ def add_crawler_task():
     user_token = get_auth_from_header()
     user_id = Users.get_token_user(user_token)
     res = crawlers.api_add_crawler_task(data, user_id=user_id)
+    if res:
+        return create_json_response(res[0], res[1])
+
+    dict_res = {'url': data['url']}
+    return create_json_response(dict_res, 200)
+
+
+@restApi.route("api/v1/add/crawler/capture", methods=['POST'])
+@token_required('analyst')
+def add_crawler_capture():
+    data = request.get_json()
+    user_token = get_auth_from_header()
+    user_id = Users.get_token_user(user_token)
+    res = crawlers.api_add_crawler_capture(data, user_id)
     if res:
         return create_json_response(res[0], res[1])
 

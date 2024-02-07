@@ -81,7 +81,7 @@ def get_user_passwd_hash(user_id):
     return r_serv_db.hget('ail:users:all', user_id)
 
 def get_user_token(user_id):
-    return r_serv_db.hget(f'ail:users:metadata:{user_id}', 'token')
+    return r_serv_db.hget(f'ail:user:metadata:{user_id}', 'token')
 
 def get_token_user(token):
     return r_serv_db.hget('ail:users:tokens', token)
@@ -156,7 +156,8 @@ def delete_user(user_id):
         for role_id in get_all_roles():
             r_serv_db.srem(f'ail:users:role:{role_id}', user_id)
         user_token = get_user_token(user_id)
-        r_serv_db.hdel('ail:users:tokens', user_token)
+        if user_token:
+            r_serv_db.hdel('ail:users:tokens', user_token)
         r_serv_db.delete(f'ail:user:metadata:{user_id}')
         r_serv_db.hdel('ail:users:all', user_id)
 
@@ -246,7 +247,10 @@ class User(UserMixin):
             self.id = "__anonymous__"
 
     def exists(self):
-        return self.id != "__anonymous__"
+        if self.id == "__anonymous__":
+            return False
+        else:
+            return r_serv_db.exists(f'ail:user:metadata:{self.id}')
 
     # return True or False
     # def is_authenticated():
@@ -286,3 +290,6 @@ class User(UserMixin):
             return True
         else:
             return False
+
+    def get_role(self):
+        return r_serv_db.hget(f'ail:user:metadata:{self.id}', 'role')

@@ -25,6 +25,7 @@ from exporter import MISPExporter
 from exporter import TheHiveExporter
 from lib.exceptions import MISPConnectionError
 from lib.objects import ail_objects
+from lib import ail_core
 from lib.Investigations import Investigation
 
 # ============ BLUEPRINT ============
@@ -91,7 +92,7 @@ def import_object_file():
 @login_analyst
 def objects_misp_export():
     user_id = current_user.get_id()
-    object_types = ail_objects.get_all_objects_with_subtypes_tuple()
+    object_types = ail_core.get_all_objects_with_subtypes_tuple()
     to_export = MISPExporter.get_user_misp_objects_to_export(user_id)
     return render_template("export_object.html", object_types=object_types, to_export=to_export)
 
@@ -138,7 +139,7 @@ def objects_misp_export_post():
             objects.append(obj)
 
     if invalid_obj:
-        object_types = ail_objects.get_all_objects_with_subtypes_tuple()
+        object_types = ail_core.get_all_objects_with_subtypes_tuple()
         return render_template("export_object.html", object_types=object_types,
                                to_export=objects, l_obj_invalid=invalid_obj)
 
@@ -150,20 +151,24 @@ def objects_misp_export_post():
     publish = request.form.get('misp_event_info', False)
 
     objs = ail_objects.get_objects(objects)
+    if not objs:
+        return create_json_response({'error': 'Empty Event, nothing to export'}, 400)
+
     try:
         event = misp_exporter_objects.create_event(objs, distribution=distribution, threat_level=threat_level,
-                                               analysis=analysis, info=info, export=export, publish=publish)
+                                                   analysis=analysis, info=info, export=export, publish=publish)
     except MISPConnectionError as e:
         return create_json_response({"error": e.message}, 400)
 
     MISPExporter.delete_user_misp_objects_to_export(user_id)
     if not export:
         event_uuid = event[10:46]
+        event = f'{{"Event": {event}}}'
         # TODO ADD JAVASCRIPT REFRESH PAGE IF RESP == 200
         return send_file(io.BytesIO(event.encode()), as_attachment=True,
                          download_name=f'ail_export_{event_uuid}.json')
     else:
-        object_types = ail_objects.get_all_objects_with_subtypes_tuple()
+        object_types = ail_core.get_all_objects_with_subtypes_tuple()
         return render_template("export_object.html", object_types=object_types,
                                misp_url=event['url'])
 

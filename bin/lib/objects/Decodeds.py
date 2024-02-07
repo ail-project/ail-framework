@@ -111,13 +111,25 @@ class Decoded(AbstractDaterangeObject):
     def get_rel_path(self, mimetype=None):
         if not mimetype:
             mimetype = self.get_mimetype()
+        if not mimetype:
+            self.logger.warning(f'Decoded {self.id}: Empty mimetype')
+            return None
         return os.path.join(HASH_DIR, mimetype, self.id[0:2], self.id)
 
     def get_filepath(self, mimetype=None):
-        return os.path.join(os.environ['AIL_HOME'], self.get_rel_path(mimetype=mimetype))
+        rel_path = self.get_rel_path(mimetype=mimetype)
+        if not rel_path:
+            return None
+        else:
+            return os.path.join(os.environ['AIL_HOME'], rel_path)
 
     def get_content(self, mimetype=None, r_type='str'):
         filepath = self.get_filepath(mimetype=mimetype)
+        if not filepath:
+            if r_type == 'str':
+                return ''
+            else:
+                return b''
         if r_type == 'str':
             with open(filepath, 'r') as f:
                 content = f.read()
@@ -126,7 +138,7 @@ class Decoded(AbstractDaterangeObject):
             with open(filepath, 'rb') as f:
                 content = f.read()
             return content
-        elif r_str == 'bytesio':
+        elif r_type == 'bytesio':
             with open(filepath, 'rb') as f:
                 content = BytesIO(f.read())
             return content
@@ -137,15 +149,22 @@ class Decoded(AbstractDaterangeObject):
         with zipfile.ZipFile(zip_content, "w") as zf:
             # TODO: Fix password
             # zf.setpassword(b"infected")
-            zf.writestr(self.id, self.get_content().getvalue())
+            zf.writestr(self.id, self.get_content(r_type='bytesio').getvalue())
         zip_content.seek(0)
         return zip_content
 
     def get_misp_object(self):
         obj_attrs = []
         obj = MISPObject('file')
-        obj.first_seen = self.get_first_seen()
-        obj.last_seen = self.get_last_seen()
+        first_seen = self.get_first_seen()
+        last_seen = self.get_last_seen()
+        if first_seen:
+            obj.first_seen = first_seen
+        if last_seen:
+            obj.last_seen = last_seen
+        if not first_seen or not last_seen:
+            self.logger.warning(
+                f'Export error, None seen {self.type}:{self.subtype}:{self.id}, first={first_seen}, last={last_seen}')
 
         obj_attrs.append(obj.add_attribute('sha1', value=self.id))
         obj_attrs.append(obj.add_attribute('mimetype', value=self.get_mimetype()))
@@ -220,8 +239,8 @@ class Decoded(AbstractDaterangeObject):
 
         return True
 
-    def add(self, algo_name, date, obj_id, mimetype=None):
-        self._add(date, obj_id)
+    def add(self, date, obj, algo_name, mimetype=None):
+        self._add(date, obj)
         if not mimetype:
             mimetype = self.get_mimetype()
 
@@ -435,13 +454,13 @@ def get_all_decodeds_objects(filters={}):
                 if i >= len(files):
                     files = []
             for file in files:
-                yield Decoded(file).id
+                yield Decoded(file)
 
 
 ############################################################################
 
 def sanityze_decoder_names(decoder_name):
-    if decoder_name not in Decodeds.get_algos():
+    if decoder_name not in get_algos():
         return None
     else:
         return decoder_name

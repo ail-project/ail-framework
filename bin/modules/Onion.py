@@ -42,7 +42,8 @@ class Onion(AbstractModule):
         self.faup = crawlers.get_faup()
 
         # activate_crawler = p.config.get("Crawler", "activate_crawler")
-
+        self.har = config_loader.get_config_boolean('Crawler', 'default_har')
+        self.screenshot = config_loader.get_config_boolean('Crawler', 'default_screenshot')
 
         self.onion_regex = r"((http|https|ftp)?(?:\://)?([a-zA-Z0-9\.\-]+(\:[a-zA-Z0-9\.&%\$\-]+)*@)*((25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9])\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[0-9])|localhost|([a-zA-Z0-9\-]+\.)*[a-zA-Z0-9\-]+\.onion)(\:[0-9]+)*(/($|[a-zA-Z0-9\.\,\?\'\\\+&%\$#\=~_\-]+))*)"
         # self.i2p_regex = r"((http|https|ftp)?(?:\://)?([a-zA-Z0-9\.\-]+(\:[a-zA-Z0-9\.&%\$\-]+)*@)*((25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9])\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[1-9]|0)\.(25[0-5]|2[0-4][0-9]|[0-1]{1}[0-9]{2}|[1-9]{1}[0-9]{1}|[0-9])|localhost|([a-zA-Z0-9\-]+\.)*[a-zA-Z0-9\-]+\.i2p)(\:[0-9]+)*(/($|[a-zA-Z0-9\.\,\?\'\\\+&%\$#\=~_\-]+))*)"
@@ -69,8 +70,8 @@ class Onion(AbstractModule):
         onion_urls = []
         domains = []
 
-        item_id, score = message.split()
-        item = Item(item_id)
+        score = message
+        item = self.get_obj()
         item_content = item.get_content()
 
         # max execution time on regex
@@ -90,8 +91,9 @@ class Onion(AbstractModule):
 
         if onion_urls:
             if crawlers.is_crawler_activated():
-                for domain in domains:  # TODO LOAD DEFAULT SCREENSHOT + HAR
-                    task_uuid = crawlers.create_task(domain, parent=item.get_id(), priority=0)
+                for domain in domains:
+                    task_uuid = crawlers.create_task(domain, parent=item.get_id(), priority=0,
+                                                     har=self.har, screenshot=self.screenshot)
                     if task_uuid:
                         print(f'{domain} added to crawler queue: {task_uuid}')
             else:
@@ -100,8 +102,8 @@ class Onion(AbstractModule):
                 self.redis_logger.warning(f'{to_print}Detected {len(domains)} .onion(s);{item.get_id()}')
 
             # TAG Item
-            msg = f'infoleak:automatic-detection="onion";{item.get_id()}'
-            self.add_message_to_queue(msg, 'Tags')
+            tag = 'infoleak:automatic-detection="onion"'
+            self.add_message_to_queue(message=tag, queue='Tags')
 
 
 if __name__ == "__main__":

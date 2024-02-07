@@ -9,6 +9,7 @@ import sys
 from hashlib import sha256
 from io import BytesIO
 from flask import url_for
+from pymisp import MISPObject
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -79,15 +80,15 @@ class Screenshot(AbstractObject):
         obj_attrs = []
         obj = MISPObject('file')
 
-        obj_attrs.append( obj.add_attribute('sha256', value=self.id) )
-        obj_attrs.append( obj.add_attribute('attachment', value=self.id, data=self.get_file_content()) )
+        obj_attrs.append(obj.add_attribute('sha256', value=self.id))
+        obj_attrs.append(obj.add_attribute('attachment', value=self.id, data=self.get_file_content()))
         for obj_attr in obj_attrs:
             for tag in self.get_tags():
                 obj_attr.add_tag(tag)
         return obj
 
     def get_meta(self, options=set()):
-        meta = {'id': self.id}
+        meta = self.get_default_meta()
         meta['img'] = get_screenshot_rel_path(self.id)  ######### # TODO: Rename ME ??????
         meta['tags'] = self.get_tags(r_list=True)
         if 'tags_safe' in options:

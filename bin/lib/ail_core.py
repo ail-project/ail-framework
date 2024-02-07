@@ -13,9 +13,12 @@ from lib.ConfigLoader import ConfigLoader
 
 config_loader = ConfigLoader()
 r_serv_db = config_loader.get_db_conn("Kvrocks_DB")
+r_object = config_loader.get_db_conn("Kvrocks_Objects")
 config_loader = None
 
-AIL_OBJECTS = sorted({'cve', 'cryptocurrency', 'decoded', 'domain', 'item', 'pgp', 'screenshot', 'username'})
+AIL_OBJECTS = sorted({'chat', 'chat-subchannel', 'chat-thread', 'cookie-name', 'cve', 'cryptocurrency', 'decoded',
+                      'domain', 'etag', 'favicon', 'file-name', 'hhhash',
+                      'item', 'image', 'message', 'pgp', 'screenshot', 'title', 'user-account', 'username'})
 
 def get_ail_uuid():
     ail_uuid = r_serv_db.get('ail:uuid')
@@ -37,19 +40,28 @@ def get_all_objects():
     return AIL_OBJECTS
 
 def get_objects_with_subtypes():
-    return ['cryptocurrency', 'pgp', 'username']
+    return ['chat', 'cryptocurrency', 'pgp', 'username', 'user-account']
 
-def get_object_all_subtypes(obj_type):
+def get_object_all_subtypes(obj_type):  # TODO Dynamic subtype
+    if obj_type == 'chat':
+        return r_object.smembers(f'all_chat:subtypes')
+    if obj_type == 'chat-subchannel':
+        return r_object.smembers(f'all_chat-subchannel:subtypes')
     if obj_type == 'cryptocurrency':
         return ['bitcoin', 'bitcoin-cash', 'dash', 'ethereum', 'litecoin', 'monero', 'zcash']
     if obj_type == 'pgp':
         return ['key', 'mail', 'name']
     if obj_type == 'username':
         return ['telegram', 'twitter', 'jabber']
+    if obj_type == 'user-account':
+        return r_object.smembers(f'all_chat:subtypes')
     return []
 
+def get_obj_queued():
+    return ['item', 'image']
+
 def get_objects_tracked():
-    return ['decoded', 'item', 'pgp']
+    return ['decoded', 'item', 'pgp', 'title']
 
 def get_objects_retro_hunted():
     return ['decoded', 'item']
@@ -64,6 +76,32 @@ def get_all_objects_with_subtypes_tuple():
         else:
             str_objs.append((obj_type, ''))
     return str_objs
+
+def unpack_obj_global_id(global_id, r_type='tuple'):
+    if r_type == 'dict':
+        obj = global_id.split(':', 2)
+        return {'type': obj[0], 'subtype': obj[1], 'id': obj[2]}
+    else:  # tuple(type, subtype, id)
+        return global_id.split(':', 2)
+
+def unpack_objs_global_id(objs_global_id, r_type='tuple'):
+    objs = []
+    for global_id in objs_global_id:
+        objs.append(unpack_obj_global_id(global_id, r_type=r_type))
+    return objs
+
+def unpack_correl_obj__id(obj_type, global_id, r_type='tuple'):
+    obj = global_id.split(':', 1)
+    if r_type == 'dict':
+        return {'type': obj_type, 'subtype': obj[0], 'id': obj[1]}
+    else:  # tuple(type, subtype, id)
+        return obj_type, obj[0], obj[1]
+
+def unpack_correl_objs_id(obj_type, correl_objs_id, r_type='tuple'):
+    objs = []
+    for correl_obj_id in correl_objs_id:
+        objs.append(unpack_correl_obj__id(obj_type, correl_obj_id, r_type=r_type))
+    return objs
 
 ##-- AIL OBJECTS --##
 
@@ -81,6 +119,10 @@ def zscan_iter(r_redis, name):  # count ???
         yield from data
 
 ## --    Redis     -- ##
+
+def rreplace(s, old, new, occurrence):
+    li = s.rsplit(old, occurrence)
+    return new.join(li)
 
 def paginate_iterator(iter_elems, nb_obj=50, page=1):
     dict_page = {'nb_all_elem': len(iter_elems)}

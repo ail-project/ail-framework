@@ -36,8 +36,10 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from packages import git_status
+from packages import Date
 from lib.ConfigLoader import ConfigLoader
 from lib.objects.Domains import Domain
+from lib.objects import HHHashs
 from lib.objects.Items import Item
 
 config_loader = ConfigLoader()
@@ -74,8 +76,8 @@ def get_current_date(separator=False):
 def get_date_crawled_items_source(date):
     return os.path.join('crawled', date)
 
-def get_date_har_dir(date):
-    return os.path.join(HAR_DIR, date)
+def get_har_dir():
+    return HAR_DIR
 
 def is_valid_onion_domain(domain):
     if not domain.endswith('.onion'):
@@ -133,7 +135,7 @@ def unpack_url(url):
 # # # # # # # # TODO CREATE NEW OBJECT
 
 def get_favicon_from_html(html, domain, url):
-    favicon_urls = extract_favicon_from_html(html, url)
+    favicon_urls, favicons = extract_favicon_from_html(html, url)
     # add root favicon
     if not favicon_urls:
         favicon_urls.add(f'{urlparse(url).scheme}://{domain}/favicon.ico')
@@ -141,9 +143,11 @@ def get_favicon_from_html(html, domain, url):
     return favicon_urls
 
 def extract_favicon_from_html(html, url):
-    favicon_urls = set()
+    favicons = set()
+    favicons_urls = set()
+
     soup = BeautifulSoup(html, 'html.parser')
-    set_icons = set()
+    all_icons = set()
     # If there are multiple <link rel="icon">s, the browser uses their media,
     # type, and sizes attributes to select the most appropriate icon.
     # If several icons are equally appropriate, the last one is used.
@@ -159,30 +163,293 @@ def extract_favicon_from_html(html, url):
     #   - <meta name="msapplication-TileColor" content="#aaaaaa"> <meta name="theme-color" content="#ffffff">
     #   - <meta name="msapplication-config" content="/icons/browserconfig.xml">
 
-    # desktop browser 'shortcut icon' (older browser), 'icon'
-    for favicon_tag in ['icon', 'shortcut icon']:
-        if soup.head:
-            for icon in soup.head.find_all('link', attrs={'rel': lambda x : x and x.lower() == favicon_tag, 'href': True}):
-                set_icons.add(icon)
+    # Root Favicon
+    f = get_faup()
+    f.decode(url)
+    url_decoded = f.get()
+    root_domain = f"{url_decoded['scheme']}://{url_decoded['domain']}"
+    default_icon = f'{root_domain}/favicon.ico'
+    favicons_urls.add(default_icon)
+    # print(default_icon)
 
-    # # TODO: handle base64 favicon
-    for tag in set_icons:
+    # shortcut
+    for shortcut in soup.find_all('link', rel='shortcut icon'):
+        all_icons.add(shortcut)
+    # icons
+    for icon in soup.find_all('link', rel='icon'):
+        all_icons.add(icon)
+
+    for mask_icon in soup.find_all('link', rel='mask-icon'):
+        all_icons.add(mask_icon)
+    for apple_touche_icon in soup.find_all('link', rel='apple-touch-icon'):
+        all_icons.add(apple_touche_icon)
+    for msapplication in soup.find_all('meta', attrs={'name': 'msapplication-TileImage'}):  # msapplication-TileColor
+        all_icons.add(msapplication)
+
+    # msapplication-TileImage
+
+    # print(all_icons)
+    for tag in all_icons:
         icon_url = tag.get('href')
         if icon_url:
-            if icon_url.startswith('//'):
-                icon_url = icon_url.replace('//', '/')
             if icon_url.startswith('data:'):
-                # # TODO: handle base64 favicon
-                pass
+                data = icon_url.split(',', 1)
+                if len(data) > 1:
+                    data = ''.join(data[1].split())
+                    favicon = base64.b64decode(data)
+                    if favicon:
+                        favicons.add(favicon)
             else:
-                icon_url = urljoin(url, icon_url)
-                icon_url = urlparse(icon_url, scheme=urlparse(url).scheme).geturl()
-                favicon_urls.add(icon_url)
-    return favicon_urls
+                favicon_url = urljoin(url, icon_url)
+                favicons_urls.add(favicon_url)
+        elif tag.get('name') == 'msapplication-TileImage':
+            icon_url = tag.get('content')
+            if icon_url:
+                if icon_url.startswith('data:'):
+                    data = icon_url.split(',', 1)
+                    if len(data) > 1:
+                        data = ''.join(data[1].split())
+                        favicon = base64.b64decode(data)
+                        if favicon:
+                            favicons.add(favicon)
+                else:
+                    favicon_url = urljoin(url, icon_url)
+                    favicons_urls.add(favicon_url)
+                    print(favicon_url)
 
+    # print(favicons_urls)
+    return favicons_urls, favicons
+
+# mmh3.hash(favicon)
 
 # # # - - # # #
 
+# # # # # # # #
+#             #
+#    TITLE    #
+#             #
+# # # # # # # #
+
+def extract_title_from_html(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    title = soup.title
+    if title:
+        title = title.string
+        if title:
+            return str(title)
+    return ''
+
+def extract_description_from_html(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    description = soup.find('meta', attrs={'name': 'description'})
+    if description:
+        return description['content']
+    return ''
+
+def extract_keywords_from_html(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    keywords = soup.find('meta', attrs={'name': 'keywords'})
+    if keywords:
+        return keywords['content']
+    return ''
+
+def extract_author_from_html(html):
+    soup = BeautifulSoup(html, 'html.parser')
+    keywords = soup.find('meta', attrs={'name': 'author'})
+    if keywords:
+        return keywords['content']
+    return ''
+
+# # # - - # # #
+
+
+# # # # # # # #
+#             #
+#     HAR     #
+#             #
+# # # # # # # #
+
+def create_har_id(date, item_id):
+    item_id = item_id.split('/')[-1]
+    return os.path.join(date, f'{item_id}.json.gz')
+
+def save_har(har_id, har_content):
+    # create dir
+    har_dir = os.path.dirname(os.path.join(get_har_dir(), har_id))
+    if not os.path.exists(har_dir):
+        os.makedirs(har_dir)
+    # save HAR
+    filename = os.path.join(get_har_dir(), har_id)
+    with gzip.open(filename, 'wb') as f:
+        f.write(json.dumps(har_content).encode())
+
+def get_all_har_ids():
+    har_ids = []
+    today_root_dir = os.path.join(HAR_DIR, Date.get_today_date_str(separator=True))
+    dirs_year = set()
+    for ydir in next(os.walk(HAR_DIR))[1]:
+        if len(ydir) == 4:
+            try:
+                int(ydir)
+                dirs_year.add(ydir)
+            except (TypeError, ValueError):
+                pass
+
+    if os.path.exists(today_root_dir):
+        for file in [f for f in os.listdir(today_root_dir) if os.path.isfile(os.path.join(today_root_dir, f))]:
+            har_id = os.path.relpath(os.path.join(today_root_dir, file), HAR_DIR)
+            har_ids.append(har_id)
+
+    for ydir in sorted(dirs_year, reverse=False):
+        search_dear = os.path.join(HAR_DIR, ydir)
+        for root, dirs, files in os.walk(search_dear):
+            for file in files:
+                if root != today_root_dir:
+                    har_id = os.path.relpath(os.path.join(root, file), HAR_DIR)
+                    har_ids.append(har_id)
+    return har_ids
+
+def get_month_har_ids(year, month):
+    har_ids = []
+    month_path = os.path.join(HAR_DIR, year, month)
+    for root, dirs, files in os.walk(month_path):
+        for file in files:
+            har_id = os.path.relpath(os.path.join(root, file), HAR_DIR)
+            har_ids.append(har_id)
+    return har_ids
+
+
+def get_har_content(har_id):
+    har_path = os.path.join(HAR_DIR, har_id)
+    try:
+        with gzip.open(har_path) as f:
+            try:
+                return json.loads(f.read())
+            except json.decoder.JSONDecodeError:
+                return {}
+    except Exception as e:
+        print(e) # TODO LOGS
+        return {}
+
+def extract_cookies_names_from_har(har):
+    cookies = set()
+    for entrie in har.get('log', {}).get('entries', []):
+        for cookie in entrie.get('request', {}).get('cookies', []):
+            name = cookie.get('name')
+            if name:
+                cookies.add(name)
+        for cookie in entrie.get('response', {}).get('cookies', []):
+            name = cookie.get('name')
+            if name:
+                cookies.add(name)
+    return cookies
+
+def _reprocess_all_hars_cookie_name():
+    from lib.objects import CookiesNames
+    for har_id in get_all_har_ids():
+        domain = har_id.split('/')[-1]
+        domain = domain[:-44]
+        date = har_id.split('/')
+        date = f'{date[-4]}{date[-3]}{date[-2]}'
+        for cookie_name in extract_cookies_names_from_har(get_har_content(har_id)):
+            print(domain, date, cookie_name)
+            cookie = CookiesNames.create(cookie_name)
+            cookie.add(date, Domain(domain))
+
+def extract_etag_from_har(har):  # TODO check response url
+    etags = set()
+    for entrie in har.get('log', {}).get('entries', []):
+        for header in entrie.get('response', {}).get('headers', []):
+            if header.get('name') == 'etag':
+                # print(header)
+                etag = header.get('value')
+                if etag:
+                    etags.add(etag)
+    return etags
+
+def _reprocess_all_hars_etag():
+    from lib.objects import Etags
+    for har_id in get_all_har_ids():
+        domain = har_id.split('/')[-1]
+        domain = domain[:-44]
+        date = har_id.split('/')
+        date = f'{date[-4]}{date[-3]}{date[-2]}'
+        for etag_content in extract_etag_from_har(get_har_content(har_id)):
+            print(domain, date, etag_content)
+            etag = Etags.create(etag_content)
+            etag.add(date, Domain(domain))
+
+def extract_hhhash_by_id(har_id, domain, date):
+    return extract_hhhash(get_har_content(har_id), domain, date)
+
+def extract_hhhash(har, domain, date):
+    hhhashs = set()
+    urls = set()
+    for entrie in har.get('log', {}).get('entries', []):
+        url = entrie.get('request').get('url')
+        if url not in urls:
+            # filter redirect
+            if entrie.get('response').get('status') == 200:  # != 301:
+                # print(url, entrie.get('response').get('status'))
+
+                f = get_faup()
+                f.decode(url)
+                domain_url = f.get().get('domain')
+                if domain_url == domain:
+
+                    headers = entrie.get('response').get('headers')
+
+                    hhhash_header = HHHashs.build_hhhash_headers(headers)
+                    hhhash = HHHashs.hhhash_headers(hhhash_header)
+
+                    if hhhash not in hhhashs:
+                        print('', url, hhhash)
+
+                        # -----
+                        obj = HHHashs.create(hhhash_header, hhhash)
+                        obj.add(date, Domain(domain))
+
+                    hhhashs.add(hhhash)
+                    urls.add(url)
+    print()
+    print()
+    print('HHHASH:')
+    for hhhash in hhhashs:
+        print(hhhash)
+    return hhhashs
+
+def _reprocess_all_hars_hhhashs():
+    for har_id in get_all_har_ids():
+        print()
+        print(har_id)
+        domain = har_id.split('/')[-1]
+        domain = domain[:-44]
+        date = har_id.split('/')
+        date = f'{date[-4]}{date[-3]}{date[-2]}'
+        extract_hhhash_by_id(har_id, domain, date)
+
+
+
+def _gzip_har(har_id):
+    har_path = os.path.join(HAR_DIR, har_id)
+    new_id = f'{har_path}.gz'
+    if not har_id.endswith('.gz'):
+        if not os.path.exists(new_id):
+            with open(har_path, 'rb') as f:
+                content = f.read()
+            if content:
+                with gzip.open(new_id, 'wb') as f:
+                    r = f.write(content)
+                    print(r)
+    if os.path.exists(new_id) and os.path.exists(har_path):
+        os.remove(har_path)
+        print('delete:', har_path)
+
+def _gzip_all_hars():
+    for har_id in get_all_har_ids():
+        _gzip_har(har_id)
+
+# # # - - # # #
 
 ################################################################################
 
@@ -498,8 +765,7 @@ class Cookie:
                 meta[field] = value
         if r_json:
             data = json.dumps(meta, indent=4, sort_keys=True)
-            meta = {'data': data}
-            meta['uuid'] = self.uuid
+            meta = {'data': data, 'uuid': self.uuid}
         return meta
 
     def edit(self, cookie_dict):
@@ -611,7 +877,7 @@ def unpack_imported_json_cookie(json_cookie):
 
 ##  - -  ##
 #### COOKIEJAR API ####
-def api_import_cookies_from_json(user_id, cookiejar_uuid, json_cookies_str): # # TODO: add catch
+def api_import_cookies_from_json(user_id, cookiejar_uuid, json_cookies_str):  # # TODO: add catch
     resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
     if resp:
         return resp
@@ -780,8 +1046,8 @@ class CrawlerScheduler:
                     minutes = 0
                 current_time = datetime.now().timestamp()
                 time_next_run = (datetime.now() + relativedelta(months=int(months), weeks=int(weeks),
-                                                                         days=int(days), hours=int(hours),
-                                                                         minutes=int(minutes))).timestamp()
+                                                                days=int(days), hours=int(hours),
+                                                                minutes=int(minutes))).timestamp()
                 # Make sure the next capture is not scheduled for in a too short interval
                 interval_next_capture = time_next_run - current_time
                 if interval_next_capture < self.min_frequency:
@@ -803,6 +1069,7 @@ class CrawlerScheduler:
             task_uuid = create_task(meta['url'], depth=meta['depth'], har=meta['har'], screenshot=meta['screenshot'],
                                     header=meta['header'],
                                     cookiejar=meta['cookiejar'], proxy=meta['proxy'],
+                                    tags=meta['tags'],
                                     user_agent=meta['user_agent'], parent='scheduler', priority=40)
             if task_uuid:
                 schedule.set_task(task_uuid)
@@ -905,6 +1172,14 @@ class CrawlerSchedule:
     def _set_field(self, field, value):
         return r_crawler.hset(f'schedule:{self.uuid}', field, value)
 
+    def get_tags(self):
+        return r_crawler.smembers(f'schedule:tags:{self.uuid}')
+
+    def set_tags(self, tags=[]):
+        for tag in tags:
+            r_crawler.sadd(f'schedule:tags:{self.uuid}', tag)
+            # Tag.create_custom_tag(tag)
+
     def get_meta(self, ui=False):
         meta = {
             'uuid': self.uuid,
@@ -919,6 +1194,7 @@ class CrawlerSchedule:
             'cookiejar': self.get_cookiejar(),
             'header': self.get_header(),
             'proxy': self.get_proxy(),
+            'tags': self.get_tags(),
         }
         status = self.get_status()
         if ui:
@@ -934,6 +1210,7 @@ class CrawlerSchedule:
         meta = {'uuid': self.uuid,
                 'url': self.get_url(),
                 'user': self.get_user(),
+                'tags': self.get_tags(),
                 'next_run': self.get_next_run(r_str=True)}
         status = self.get_status()
         if isinstance(status, ScheduleStatus):
@@ -942,7 +1219,7 @@ class CrawlerSchedule:
         return meta
 
     def create(self, frequency, user, url,
-               depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None, user_agent=None):
+               depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None, user_agent=None, tags=[]):
 
         if self.exists():
             raise Exception('Error: Monitor already exists')
@@ -971,6 +1248,9 @@ class CrawlerSchedule:
         if user_agent:
             self._set_field('user_agent', user_agent)
 
+        if tags:
+            self.set_tags(tags)
+
         r_crawler.sadd('scheduler:schedules', self.uuid)
 
     def delete(self):
@@ -984,12 +1264,13 @@ class CrawlerSchedule:
 
         # delete meta
         r_crawler.delete(f'schedule:{self.uuid}')
+        r_crawler.delete(f'schedule:tags:{self.uuid}')
         r_crawler.srem('scheduler:schedules', self.uuid)
 
-def create_schedule(frequency, user, url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None, user_agent=None):
+def create_schedule(frequency, user, url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None, user_agent=None, tags=[]):
     schedule_uuid = gen_uuid()
     schedule = CrawlerSchedule(schedule_uuid)
-    schedule.create(frequency, user, url, depth=depth, har=har, screenshot=screenshot, header=header, cookiejar=cookiejar, proxy=proxy, user_agent=user_agent)
+    schedule.create(frequency, user, url, depth=depth, har=har, screenshot=screenshot, header=header, cookiejar=cookiejar, proxy=proxy, user_agent=user_agent, tags=tags)
     return schedule_uuid
 
 # TODO sanityze UUID
@@ -1046,18 +1327,29 @@ class CrawlerCapture:
         if task_uuid:
             return CrawlerTask(task_uuid)
 
-    def get_start_time(self):
-        return self.get_task().get_start_time()
+    def get_start_time(self, r_str=True):
+        start_time = self.get_task().get_start_time()
+        if r_str:
+            return start_time
+        elif not start_time:
+            return 0
+        else:
+            start_time = datetime.strptime(start_time, "%Y/%m/%d  -  %H:%M.%S").timestamp()
+            return int(start_time)
 
     def get_status(self):
-        return r_cache.hget(f'crawler:capture:{self.uuid}', 'status')
+        status = r_cache.hget(f'crawler:capture:{self.uuid}', 'status')
+        if not status:
+            status = -1
+        return status
 
     def is_ongoing(self):
         return self.get_status() == CaptureStatus.ONGOING
 
     def create(self, task_uuid):
         if self.exists():
-            raise Exception(f'Error: Capture {self.uuid} already exists')
+            print(f'Capture {self.uuid} already exists')  # TODO LOGS
+            return None
         launch_time = int(time.time())
         r_crawler.hset(f'crawler:task:{task_uuid}', 'capture', self.uuid)
         r_crawler.hset('crawler:captures:tasks', self.uuid, task_uuid)
@@ -1068,7 +1360,7 @@ class CrawlerCapture:
     def update(self, status):
         # Error or Reload
         if not status:
-            r_cache.hset(f'crawler:capture:{self.uuid}', 'status', CaptureStatus.UNKNOWN)
+            r_cache.hset(f'crawler:capture:{self.uuid}', 'status', CaptureStatus.UNKNOWN.value)
             r_cache.zadd('crawler:captures', {self.uuid: 0})
         else:
             last_check = int(time.time())
@@ -1121,6 +1413,11 @@ def get_captures_status():
         meta['status'] = capture_status
         status.append(meta)
     return status
+
+def delete_captures():
+    for capture_uuid in get_crawler_captures():
+        capture = CrawlerCapture(capture_uuid)
+        capture.delete()
 
 ##-- CRAWLER STATE --##
 
@@ -1204,6 +1501,14 @@ class CrawlerTask:
     def _set_field(self, field, value):
         return r_crawler.hset(f'crawler:task:{self.uuid}', field, value)
 
+    def get_tags(self):
+        return r_crawler.smembers(f'crawler:task:tags:{self.uuid}')
+
+    def set_tags(self, tags):
+        for tag in tags:
+            r_crawler.sadd(f'crawler:task:tags:{self.uuid}', tag)
+            # Tag.create_custom_tag(tag)
+
     def get_meta(self):
         meta = {
             'uuid': self.uuid,
@@ -1218,6 +1523,7 @@ class CrawlerTask:
             'header': self.get_header(),
             'proxy': self.get_proxy(),
             'parent': self.get_parent(),
+            'tags': self.get_tags(),
         }
         return meta
 
@@ -1225,7 +1531,7 @@ class CrawlerTask:
     # TODO SANITIZE PRIORITY
     # PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
     def create(self, url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
-               user_agent=None, parent='manual', priority=0):
+               user_agent=None, tags=[], parent='manual', priority=0, external=False):
         if self.exists():
             raise Exception('Error: Task already exists')
 
@@ -1256,7 +1562,7 @@ class CrawlerTask:
         # TODO SANITIZE COOKIEJAR -> UUID
 
         # Check if already in queue
-        hash_query = get_task_hash(url, domain, depth, har, screenshot, priority, proxy, cookiejar, user_agent, header)
+        hash_query = get_task_hash(url, domain, depth, har, screenshot, priority, proxy, cookiejar, user_agent, header, tags)
         if r_crawler.hexists(f'crawler:queue:hash', hash_query):
             self.uuid = r_crawler.hget(f'crawler:queue:hash', hash_query)
             return self.uuid
@@ -1277,10 +1583,13 @@ class CrawlerTask:
         if user_agent:
             self._set_field('user_agent', user_agent)
 
+        if tags:
+            self.set_tags(tags)
+
         r_crawler.hset('crawler:queue:hash', hash_query, self.uuid)
         self._set_field('hash', hash_query)
-        r_crawler.zadd('crawler:queue', {self.uuid: priority})
-        self.add_to_db_crawler_queue(priority)
+        if not external:
+            self.add_to_db_crawler_queue(priority)
         # UI
         domain_type = dom.get_domain_type()
         r_crawler.sadd(f'crawler:queue:type:{domain_type}', self.uuid)
@@ -1292,6 +1601,11 @@ class CrawlerTask:
 
     def start(self):
         self._set_field('start_time', datetime.now().strftime("%Y/%m/%d  -  %H:%M.%S"))
+
+    def reset(self):
+        priority = 49
+        r_crawler.hdel(f'crawler:task:{self.uuid}', 'start_time')
+        self.add_to_db_crawler_queue(priority)
 
     # Crawler
     def remove(self):  # zrem cache + DB
@@ -1316,10 +1630,10 @@ class CrawlerTask:
 
 
 # TODO move to class ???
-def get_task_hash(url, domain, depth, har, screenshot, priority, proxy, cookiejar, user_agent, header):
+def get_task_hash(url, domain, depth, har, screenshot, priority, proxy, cookiejar, user_agent, header, tags):
     to_enqueue = {'domain': domain, 'depth': depth, 'har': har, 'screenshot': screenshot,
                   'priority': priority, 'proxy': proxy, 'cookiejar': cookiejar, 'user_agent': user_agent,
-                  'header': header}
+                  'header': header, 'tags': tags}
     if priority != 0:
         to_enqueue['url'] = url
     return hashlib.sha512(pickle.dumps(to_enqueue)).hexdigest()
@@ -1330,12 +1644,11 @@ def add_task_to_lacus_queue():
         return None
     task_uuid, priority = task_uuid[0]
     task = CrawlerTask(task_uuid)
-    task.start()
-    return task.uuid, priority
+    return task, priority
 
 # PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
 def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
-                user_agent=None, parent='manual', priority=0, task_uuid=None):
+                user_agent=None, tags=[], parent='manual', priority=0, task_uuid=None, external=False):
     if task_uuid:
         if CrawlerTask(task_uuid).exists():
             task_uuid = gen_uuid()
@@ -1343,7 +1656,8 @@ def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=
         task_uuid = gen_uuid()
     task = CrawlerTask(task_uuid)
     task_uuid = task.create(url, depth=depth, har=har, screenshot=screenshot, header=header, cookiejar=cookiejar,
-                            proxy=proxy, user_agent=user_agent, parent=parent, priority=priority)
+                            proxy=proxy, user_agent=user_agent, tags=tags, parent=parent, priority=priority,
+                            external=external)
     return task_uuid
 
 
@@ -1353,7 +1667,8 @@ def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=
 
 # # TODO: ADD user agent
 # # TODO: sanitize URL
-def api_add_crawler_task(data, user_id=None):
+
+def api_parse_task_dict_basic(data, user_id):
     url = data.get('url', None)
     if not url or url == '\n':
         return {'status': 'error', 'reason': 'No url supplied'}, 400
@@ -1379,6 +1694,31 @@ def api_add_crawler_task(data, user_id=None):
     else:
         depth_limit = 0
 
+    # PROXY
+    proxy = data.get('proxy', None)
+    if proxy == 'onion' or proxy == 'tor' or proxy == 'force_tor':
+        proxy = 'force_tor'
+    elif proxy:
+        verify = api_verify_proxy(proxy)
+        if verify[1] != 200:
+            return verify
+
+    tags = data.get('tags', [])
+
+    return {'url': url, 'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'tags': tags}, 200
+
+def api_add_crawler_task(data, user_id=None):
+    task, resp = api_parse_task_dict_basic(data, user_id)
+    if resp != 200:
+        return task, resp
+
+    url = task['url']
+    screenshot = task['screenshot']
+    har = task['har']
+    depth_limit = task['depth_limit']
+    proxy = task['proxy']
+    tags = task['tags']
+
     cookiejar_uuid = data.get('cookiejar', None)
     if cookiejar_uuid:
         cookiejar = Cookiejar(cookiejar_uuid)
@@ -1389,6 +1729,19 @@ def api_add_crawler_task(data, user_id=None):
             if cookiejar.get_user() != user_id:
                 return {'error': 'The access to this cookiejar is restricted'}, 403
         cookiejar_uuid = cookiejar.uuid
+
+    cookies = data.get('cookies', None)
+    if not cookiejar_uuid and cookies:
+        # Create new cookiejar
+        cookiejar_uuid = create_cookiejar(user_id, "single-shot cookiejar", 1, None)
+        cookiejar = Cookiejar(cookiejar_uuid)
+        for cookie in cookies:
+            try:
+                name = cookie.get('name')
+                value = cookie.get('value')
+                cookiejar.add_cookie(name, value, None, None, None, None, None)
+            except KeyError:
+                return {'error': 'Invalid cookie key, please submit a valid JSON', 'cookiejar_uuid': cookiejar_uuid}, 400
 
     frequency = data.get('frequency', None)
     if frequency:
@@ -1410,29 +1763,47 @@ def api_add_crawler_task(data, user_id=None):
                     return {'error': 'Invalid frequency'}, 400
                 frequency = f'{months}:{weeks}:{days}:{hours}:{minutes}'
 
-    # PROXY
-    proxy = data.get('proxy', None)
-    if proxy == 'onion' or proxy == 'tor' or proxy == 'force_tor':
-        proxy = 'force_tor'
-    elif proxy:
-        verify = api_verify_proxy(proxy)
-        if verify[1] != 200:
-            return verify
-
     if frequency:
         # TODO verify user
-        return create_schedule(frequency, user_id, url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
-                               cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None), 200
+        task_uuid = create_schedule(frequency, user_id, url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
+                               cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags)
     else:
         # TODO HEADERS
         # TODO USER AGENT
-        return create_task(url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
-                           cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None,
-                           parent='manual', priority=90), 200
+        task_uuid = create_task(url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
+                           cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags,
+                           parent='manual', priority=90)
+
+    return {'uuid': task_uuid}, 200
 
 
 #### ####
 
+# TODO cookiejar - cookies - frequency
+def api_add_crawler_capture(data, user_id):
+    task, resp = api_parse_task_dict_basic(data, user_id)
+    if resp != 200:
+        return task, resp
+
+    task_uuid = data.get('task_uuid')
+    if not task_uuid:
+        return {'error': 'Invalid task_uuid', 'task_uuid': task_uuid}, 400
+    capture_uuid = data.get('capture_uuid')
+    if not capture_uuid:
+        return {'error': 'Invalid capture_uuid', 'capture_uuid': capture_uuid}, 400
+
+    # parent = data.get('parent')
+
+    # TODO parent
+    task_uuid = create_task(task['url'], depth=task['depth_limit'], har=task['har'], screenshot=task['screenshot'],
+                            proxy=task['proxy'], tags=task['tags'],
+                            parent='manual', task_uuid=task_uuid, external=True)
+    if not task_uuid:
+        return {'error': 'Aborted by Crawler', 'task_uuid': task_uuid, 'capture_uuid': capture_uuid}, 400
+    task = CrawlerTask(task_uuid)
+    create_capture(capture_uuid, task_uuid)
+    task.start()
+    return {'uuid': capture_uuid}, 200
 
 ###################################################################################
 ###################################################################################
@@ -1471,14 +1842,6 @@ def create_item_id(item_dir, domain):
         UUID = domain+str(uuid.uuid4())
     return os.path.join(item_dir, UUID)
 
-def save_har(har_dir, item_id, har_content):
-    if not os.path.exists(har_dir):
-        os.makedirs(har_dir)
-    item_id = item_id.split('/')[-1]
-    filename = os.path.join(har_dir, item_id + '.json')
-    with open(filename, 'w') as f:
-        f.write(json.dumps(har_content))
-
 # # # # # # # # # # # #
 #                     #
 #   CRAWLER MANAGER   # TODO REFACTOR ME
@@ -1509,13 +1872,13 @@ class CrawlerProxy:
         self.uuid = proxy_uuid
 
     def get_description(self):
-        return r_crawler.hgrt(f'crawler:proxy:{self.uuif}', 'description')
+        return r_crawler.hget(f'crawler:proxy:{self.uuid}', 'description')
 
     # Host
     # Port
     # Type -> need test
     def get_url(self):
-        return r_crawler.hgrt(f'crawler:proxy:{self.uuif}', 'url')
+        return r_crawler.hget(f'crawler:proxy:{self.uuid}', 'url')
 
 #### CRAWLER LACUS ####
 
@@ -1577,7 +1940,11 @@ def ping_lacus():
         ping = False
         req_error = {'error': 'Lacus URL undefined', 'status_code': 400}
     else:
-        ping = lacus.is_up
+        try:
+            ping = lacus.is_up
+        except:
+            req_error = {'error': 'Failed to connect Lacus URL', 'status_code': 400}
+            ping = False
     update_lacus_connection_status(ping, req_error=req_error)
     return ping
 
@@ -1594,7 +1961,7 @@ def api_save_lacus_url_key(data):
     # unpack json
     manager_url = data.get('url', None)
     api_key = data.get('api_key', None)
-    if not manager_url: # or not api_key:
+    if not manager_url:  # or not api_key:
         return {'status': 'error', 'reason': 'No url or API key supplied'}, 400
     # check if is valid url
     try:
@@ -1637,7 +2004,7 @@ def api_set_crawler_max_captures(data):
     save_nb_max_captures(nb_captures)
     return nb_captures, 200
 
- ## TEST ##
+## TEST ##
 
 def is_test_ail_crawlers_successful():
     return r_db.hget('crawler:tor:test', 'success') == 'True'
@@ -1711,7 +2078,15 @@ def test_ail_crawlers():
 load_blacklist()
 
 # if __name__ == '__main__':
-    # task = CrawlerTask('2dffcae9-8f66-4cfa-8e2c-de1df738a6cd')
-    # print(task.get_meta())
-    # _clear_captures()
+    # delete_captures()
 
+    # item_id = 'crawled/2023/02/20/data.gz'
+    # item = Item(item_id)
+    # content = item.get_content()
+    # temp_url = ''
+    # r = extract_favicon_from_html(content, temp_url)
+    # print(r)
+    # _reprocess_all_hars_cookie_name()
+    # _reprocess_all_hars_etag()
+    # _gzip_all_hars()
+    # _reprocess_all_hars_hhhashs()

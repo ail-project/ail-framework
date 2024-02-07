@@ -43,13 +43,13 @@ class Phone(AbstractModule):
 
     def extract(self, obj_id, content, tag):
         extracted = []
-        phones = self.regex_phone_iter('US', obj_id, content)
+        phones = self.regex_phone_iter('ZZ', obj_id, content)
         for phone in phones:
             extracted.append([phone[0], phone[1], phone[2], f'tag:{tag}'])
         return extracted
 
     def compute(self, message):
-        item = Item(message)
+        item = self.get_obj()
         content = item.get_content()
 
         # TODO use language detection to choose the country code ?
@@ -59,8 +59,8 @@ class Phone(AbstractModule):
 
         if results:
             # TAGS
-            msg = f'infoleak:automatic-detection="phone-number";{item.get_id()}'
-            self.add_message_to_queue(msg, 'Tags')
+            tag = 'infoleak:automatic-detection="phone-number"'
+            self.add_message_to_queue(message=tag, queue='Tags')
 
             self.redis_logger.warning(f'{item.get_id()} contains {len(phone)} Phone numbers')
 

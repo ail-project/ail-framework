@@ -1,143 +1,72 @@
 
-Feeding, adding new features and contributing
-=============================================
+# Feeding, Adding new features and Contributing
 
-How to feed the AIL framework
------------------------------
+## [AIL Importers](./doc/README.md#ail-importers)
 
-For the moment, there are three different ways to feed AIL with data:
+Refer to the [AIL Importers Documentation](./doc/README.md#ail-importers)
 
-1. Be a collaborator of CIRCL and ask to access our feed. It will be sent to the static IP you are using for AIL.
-
-2. You can setup [pystemon](https://github.com/cvandeplas/pystemon) and use the custom feeder provided by AIL (see below).
-
-3. You can feed your own data using the [./bin/file_dir_importer.py](./bin/import_dir.py) script.
-
-### Feeding AIL with pystemon
+## Feeding Data to AIL
 
 AIL is an analysis tool, not a collector!
 However, if you want to collect some pastes and feed them to AIL, the procedure is described below. Nevertheless, moderate your queries!
 
-Feed data to AIL:
+1. [AIL Importers](./doc/README.md#ail-importers)
+2. ZMQ: Be a collaborator of CIRCL and ask to access our feed. It will be sent to the static IP you are using for AIL.
 
-1. Clone the [pystemon's git repository](https://github.com/cvandeplas/pystemon):
-``` git clone https://github.com/cvandeplas/pystemon.git ```
+## How to create a new module
 
-2. Edit configuration file for pystemon ```pystemon/pystemon.yaml```: 
-	* Configuration of storage section (adapt to your needs):
-		```
-		storage:  
-			archive:  
-				storage-classname:  FileStorage  
-				save: yes  
-				save-all: yes  
-				dir: "alerts"  
-				dir-all: "archive"  
-				compress: yes
-			
-			redis:  
-				storage-classname:  RedisStorage  
-				save: yes  
-				save-all: yes  
-				server: "localhost"  
-				port: 6379  
-				database: 10  
-				lookup: no
-		```
-	* Change configuration for paste-sites according to your needs (don't forget to throttle download time and/or update time).
-3. Install python dependencies inside the virtual environment:
-	``` 
-	cd ail-framework/
-	. ./AILENV/bin/activate
-	cd pystemon/ #cd to pystemon folder
-	pip3 install -U -r requirements.txt
-	``` 
-4. Edit configuration file ```ail-framework/configs/core.cfg```:
-	* Modify the "pystemonpath" path accordingly
+To add a new processing or analysis module to AIL, follow these steps:
 
-5. Launch ail-framework, pystemon and pystemon-feeder.py (still inside virtual environment):
-	 * Option 1 (recommended): 
-		 ``` 
-		 ./ail-framework/bin/LAUNCH.py -l #starts ail-framework
-		 ./ail-framework/bin/LAUNCH.py -f #starts pystemon and the pystemon-feeder.py
-		```
-	* Option 2 (you may need two terminal windows): 
-		 ``` 
-		 ./ail-framework/bin/LAUNCH.py -l #starts ail-framework
-		 ./pystemon/pystemon.py
-		 ./ail-framework/bin/feeder/pystemon-feeder.py
-		 ```
-
-How to create a new module
---------------------------
-
-If you want to add a new processing or analysis module in AIL, follow these simple steps:
-
-1. Add your module name in [./bin/packages/modules.cfg](./bin/packages/modules.cfg) and subscribe to at least one module at minimum (Usually, Redis_Global).
-
-2. Use [./bin/template.py](./bin/template.py) as a sample module and create a new file in bin/ with the module name used in the modules.cfg configuration.
+1. Add your module name in [./configs/modules.cfg](./configs/modules.cfg) and subscribe to at least one module at minimum (Usually, `Item`).
+2. Use [./bin/modules/modules/TemplateModule.py](./bin/modules/modules/TemplateModule.py) as a sample module and create a new file in bin/modules with the module name used in the `modules.cfg` configuration.
 
 
-How to contribute a module
---------------------------
+## Contributions
 
-Feel free to fork the code, play with it, make some patches or add additional analysis modules.
+Contributions are welcome! Fork the repository, experiment with the code, and submit your modules or patches through a pull request.
 
-To contribute your module, feel free to pull your contribution.
+## Crawler
 
-
-Additional information
-======================
-
-Crawler
----------------------
-
-In AIL, you can crawl websites and Tor hidden services. Don't forget to review the proxy configuration of your Tor client and especially if you enabled the SOCKS5 proxy
-
-[//]: # (and binding on the appropriate IP address reachable via the dockers where Splash runs.)
+AIL supports crawling of websites and Tor hidden services. Ensure your Tor client's proxy configuration is correct, especially the SOCKS5 proxy settings.
 
 ### Installation
-
 
 [Install Lacus](https://github.com/ail-project/lacus)
 
 ### Configuration
 
 1. Lacus URL:  
-In the webinterface, go to ``Crawlers>Settings`` and click on the Edit button
+In the web interface, go to `Crawlers` > `Settings` and click on the Edit button
 
+![AIL Crawler Config](./doc/screenshots/lacus_config.png?raw=true "AIL Lacus Config")
 
-![Splash Manager Config](./doc/screenshots/lacus_config.png?raw=true "AIL Lacus Config")
+![AIL Crawler Config Edis](./doc/screenshots/lacus_config_edit.png?raw=true "AIL Lacus Config")
 
-![Splash Manager Config](./doc/screenshots/lacus_config_edit.png?raw=true "AIL Lacus Config")
-
-2. Launch AIL Crawlers:   
+2. Number of Crawlers:
 Choose the number of crawlers you want to launch
 
-![Splash Manager Nb Crawlers Config](./doc/screenshots/crawler_nb_captures.png?raw=true "AIL Lacus Nb Crawlers Config")
-![Splash Manager Nb Crawlers Config](./doc/screenshots/crawler_nb_captures_edit.png?raw=true "AIL Lacus Nb Crawlers Config")
+![Crawler Manager Nb Crawlers Config](./doc/screenshots/crawler_nb_captures.png?raw=true "AIL Lacus Nb Crawlers Config")
 
+![Crawler Manager Nb Crawlers Config](./doc/screenshots/crawler_nb_captures_edit.png?raw=true "AIL Lacus Nb Crawlers Config")
 
-Kvrocks Migration
----------------------
-**Important Note:
-We are currently working on a [migration script](https://github.com/ail-project/ail-framework/blob/master/bin/DB_KVROCKS_MIGRATION.py) to facilitate the migration to Kvrocks. 
-Once this script is ready, AIL version 5.0 will be released.**
+## Chats Translation with LibreTranslate
 
-Please note that the current version of this migration script only supports migrating the database on the same server.
-(If you plan to migrate to another server, we will provide additional instructions in this section once the migration script is completed)
+Chats message can be translated using [libretranslate](https://github.com/LibreTranslate/LibreTranslate), an open-source self-hosted machine translation.
 
-To migrate your database to Kvrocks:
-1. Launch ARDB and Kvrocks
-2. Pull from remote
-	```
-	git checkout master
-	git pull
- 	```
-3. Launch the migration script:
-	```
-	git checkout master
-	git pull
-	cd bin/
-	./DB_KVROCKS_MIGRATION.py
-	```
+### Installation:  
+1. Install LibreTranslate by running the following command:
+```bash
+pip install libretranslate
+```
+2. Run libretranslate:
+```bash
+libretranslate
+```
+
+### Configuration:
+To enable LibreTranslate for chat translation, edit the LibreTranslate URL in the [./configs/core.cfg](./configs/core.cfg) file under the [Translation] section.
+```
+[Translation]
+libretranslate = http://127.0.0.1:5000
+```
+
