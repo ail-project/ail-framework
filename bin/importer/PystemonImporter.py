@@ -22,6 +22,8 @@ from importer.abstract_importer import AbstractImporter
 from modules.abstract_module import AbstractModule
 from lib.ConfigLoader import ConfigLoader
 
+from lib.objects.Items import Item
+
 class PystemonImporter(AbstractImporter):
     def __init__(self, pystemon_dir, host='localhost', port=6379, db=10):
         super().__init__()
@@ -35,7 +37,7 @@ class PystemonImporter(AbstractImporter):
         print(item_id)
         if item_id:
             print(item_id)
-            full_item_path = os.path.join(self.dir_pystemon, item_id) # TODO SANITIZE PATH
+            full_item_path = os.path.join(self.dir_pystemon, item_id)  # TODO SANITIZE PATH
             # Check if pystemon file exists
             if not os.path.isfile(full_item_path):
                 print(f'Error: {full_item_path}, file not found')
@@ -47,10 +49,19 @@ class PystemonImporter(AbstractImporter):
                 if not content:
                     return None
 
-                return self.create_message(item_id, content, source='pystemon')
+                if full_item_path[-3:] == '.gz':
+                    gzipped = True
+                else:
+                    gzipped = False
+
+                # TODO handle multiple objects
+                source = 'pystemon'
+                message = self.create_message(content, gzipped=gzipped, source=source)
+                self.logger.info(f'{source} {item_id}')
+                return item_id, message
 
             except IOError as e:
-                print(f'Error: {full_item_path}, IOError')
+                self.logger.error(f'Error {e}: {full_item_path}, IOError')
         return None
 
 
@@ -74,7 +85,10 @@ class PystemonModuleImporter(AbstractModule):
         return self.importer.importer()
 
     def compute(self, message):
-        self.add_message_to_queue(message)
+        if message:
+            item_id, message = message
+            item = Item(item_id)
+            self.add_message_to_queue(obj=item, message=message)
 
 
 if __name__ == '__main__':

@@ -25,11 +25,14 @@ class Languages(AbstractModule):
         self.logger.info(f'Module {self.module_name} initialized')
 
     def compute(self, message):
-        item = Item(message)
-        if item.is_crawled():
-            domain = Domain(item.get_domain())
-            for lang in item.get_languages(min_probability=0.8):
-                domain.add_language(lang.language)
+        obj = self.get_obj()
+        
+        if obj.type == 'item':
+            if obj.is_crawled():
+                domain = Domain(obj.get_domain())
+                for lang in obj.get_languages(min_probability=0.8, force_gcld3=True):
+                    print(lang)
+                    domain.add_language(lang)
 
 
 if __name__ == '__main__':

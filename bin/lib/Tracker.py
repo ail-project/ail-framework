@@ -2,6 +2,8 @@
 # -*-coding:UTF-8 -*
 import json
 import os
+import logging
+import logging.config
 import re
 import sys
 import time
@@ -14,7 +16,7 @@ from ail_typo_squatting import runAll
 import math
 
 from collections import defaultdict
-from flask import escape
+from markupsafe import escape
 from textblob import TextBlob
 from nltk.tokenize import RegexpTokenizer
 
@@ -24,10 +26,15 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from packages import Date
 from lib.ail_core import get_objects_tracked, get_object_all_subtypes, get_objects_retro_hunted
+from lib import ail_logger
 from lib import ConfigLoader
 from lib import item_basic
 from lib import Tag
 from lib.Users import User
+
+# LOGS
+logging.config.dictConfig(ail_logger.get_config(name='modules'))
+logger = logging.getLogger()
 
 config_loader = ConfigLoader.ConfigLoader()
 r_cache = config_loader.get_redis_conn("Redis_Cache")
@@ -207,6 +214,13 @@ class Tracker:
         if filters:
             self._set_field('filters', json.dumps(filters))
 
+    def del_filters(self, tracker_type, to_track):
+        filters = self.get_filters()
+        for obj_type in filters:
+            r_tracker.srem(f'trackers:objs:{tracker_type}:{obj_type}', to_track)
+            r_tracker.srem(f'trackers:uuid:{tracker_type}:{to_track}', f'{self.uuid}:{obj_type}')
+        r_tracker.hdel(f'tracker:{self.uuid}', 'filters')
+
     def get_tracked(self):
         return self._get_field('tracked')
 
@@ -241,7 +255,8 @@ class Tracker:
         return self._get_field('user_id')
 
     def webhook_export(self):
-        return r_tracker.hexists(f'tracker:{self.uuid}', 'webhook')
+        webhook = self.get_webhook()
+        return webhook is not None and webhook
 
     def get_webhook(self):
         return r_tracker.hget(f'tracker:{self.uuid}', 'webhook')
@@ -513,6 +528,7 @@ class Tracker:
             self._set_mails(mails)
 
         # Filters
+        self.del_filters(old_type, old_to_track)
         if not filters:
             filters = {}
             for obj_type in get_objects_tracked():
@@ -522,9 +538,6 @@ class Tracker:
         for obj_type in filters:
             r_tracker.sadd(f'trackers:objs:{tracker_type}:{obj_type}', to_track)
             r_tracker.sadd(f'trackers:uuid:{tracker_type}:{to_track}', f'{self.uuid}:{obj_type}')
-            if tracker_type != old_type:
-                r_tracker.srem(f'trackers:objs:{old_type}:{obj_type}', old_to_track)
-                r_tracker.srem(f'trackers:uuid:{old_type}:{old_to_track}', f'{self.uuid}:{obj_type}')
 
         # Refresh Trackers
         trigger_trackers_refresh(tracker_type)
@@ -555,9 +568,7 @@ class Tracker:
                     os.remove(filepath)
 
         # Filters
-        filters = self.get_filters()
-        if not filters:
-            filters = get_objects_tracked()
+        filters = get_objects_tracked()
         for obj_type in filters:
             r_tracker.srem(f'trackers:objs:{tracker_type}:{obj_type}', tracked)
             r_tracker.srem(f'trackers:uuid:{tracker_type}:{tracked}', f'{self.uuid}:{obj_type}')
@@ -650,14 +661,14 @@ def get_user_trackers_meta(user_id, tracker_type=None):
     metas = []
     for tracker_uuid in get_user_trackers(user_id, tracker_type=tracker_type):
         tracker = Tracker(tracker_uuid)
-        metas.append(tracker.get_meta(options={'mails', 'sparkline', 'tags'}))
+        metas.append(tracker.get_meta(options={'description', 'mails', 'sparkline', 'tags'}))
     return metas
 
 def get_global_trackers_meta(tracker_type=None):
     metas = []
     for tracker_uuid in get_global_trackers(tracker_type=tracker_type):
         tracker = Tracker(tracker_uuid)
-        metas.append(tracker.get_meta(options={'mails', 'sparkline', 'tags'}))
+        metas.append(tracker.get_meta(options={'description', 'mails', 'sparkline', 'tags'}))
     return metas
 
 def get_users_trackers_meta():
@@ -918,7 +929,7 @@ def api_add_tracker(dict_input, user_id):
     # Filters # TODO MOVE ME
     filters = dict_input.get('filters', {})
     if filters:
-        if filters.keys() == {'decoded', 'item', 'pgp'} and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
+        if filters.keys() == {'decoded', 'item', 'pgp', 'title'} and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
             filters = {}
         for obj_type in filters:
             if obj_type not in get_objects_tracked():
@@ -993,7 +1004,7 @@ def api_edit_tracker(dict_input, user_id):
     # Filters # TODO MOVE ME
     filters = dict_input.get('filters', {})
     if filters:
-        if filters.keys() == {'decoded', 'item', 'pgp'} and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
+        if filters.keys() == {'decoded', 'item', 'pgp', 'title'} and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
             if not filters['decoded'] and not filters['item']:
                 filters = {}
         for obj_type in filters:
@@ -1146,7 +1157,11 @@ def get_tracked_yara_rules():
     for obj_type in get_objects_tracked():
         rules = {}
         for tracked in _get_tracked_by_obj_type('yara', obj_type):
-            rules[tracked] = os.path.join(get_yara_rules_dir(), tracked)
+            rule = os.path.join(get_yara_rules_dir(), tracked)
+            if not os.path.exists(rule):
+                logger.critical(f"Yara rule don't exists {tracked} : {obj_type}")
+            else:
+                rules[tracked] = rule
         to_track[obj_type] = yara.compile(filepaths=rules)
     print(to_track)
     return to_track

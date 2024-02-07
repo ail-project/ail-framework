@@ -135,11 +135,11 @@ class Mail(AbstractModule):
 
     # # TODO: sanitize mails
     def compute(self, message):
-        item_id, score = message.split()
-        item = Item(item_id)
+        score = message
+        item = self.get_obj()
         item_date = item.get_date()
 
-        mails = self.regex_findall(self.email_regex, item_id, item.get_content())
+        mails = self.regex_findall(self.email_regex, item.id, item.get_content())
         mxdomains_email = {}
         for mail in mails:
             mxdomain = mail.rsplit('@', 1)[1].lower()
@@ -172,13 +172,13 @@ class Mail(AbstractModule):
         # for tld in mx_tlds:
         #     Statistics.add_module_tld_stats_by_date('mail', item_date, tld, mx_tlds[tld])
 
-        msg = f'Mails;{item.get_source()};{item_date};{item.get_basename()};Checked {num_valid_email} e-mail(s);{item_id}'
+        msg = f'Mails;{item.get_source()};{item_date};{item.get_basename()};Checked {num_valid_email} e-mail(s);{item.id}'
         if num_valid_email > self.mail_threshold:
-            print(f'{item_id}    Checked {num_valid_email} e-mail(s)')
+            print(f'{item.id}    Checked {num_valid_email} e-mail(s)')
             self.redis_logger.warning(msg)
             # Tags
-            msg = f'infoleak:automatic-detection="mail";{item_id}'
-            self.add_message_to_queue(msg, 'Tags')
+            tag = 'infoleak:automatic-detection="mail"'
+            self.add_message_to_queue(message=tag, queue='Tags')
         elif num_valid_email > 0:
             self.redis_logger.info(msg)
 

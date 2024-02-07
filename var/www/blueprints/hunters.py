@@ -9,7 +9,7 @@ import os
 import sys
 import json
 
-from flask import render_template, jsonify, request, Blueprint, redirect, url_for, Response, escape, abort
+from flask import render_template, jsonify, request, Blueprint, redirect, url_for, Response, abort
 from flask_login import login_required, current_user, login_user, logout_user
 
 sys.path.append('modules')
@@ -172,7 +172,7 @@ def show_tracker():
         typo_squatting = set()
 
     if date_from:
-        date_from, date_to = Date.sanitise_daterange(meta['first_seen'], meta['last_seen'])
+        date_from, date_to = Date.sanitise_daterange(date_from, date_to)
         objs = tracker.get_objs_by_daterange(date_from, date_to)
         meta['objs'] = ail_objects.get_objects_meta(objs, flask_context=True)
     else:

@@ -7,10 +7,10 @@ import magic
 import os
 import re
 import sys
-import cld3
 import html2text
 
 from io import BytesIO
+from uuid import uuid4
 
 from pymisp import MISPObject
 
@@ -18,10 +18,11 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
-from lib.ail_core import get_ail_uuid
+from lib.ail_core import get_ail_uuid, rreplace
 from lib.objects.abstract_object import AbstractObject
 from lib.ConfigLoader import ConfigLoader
 from lib import item_basic
+from lib.Language import LanguagesDetector
 from lib.data_retention_engine import update_obj_date, get_obj_date_first
 from packages import Date
 
@@ -137,9 +138,23 @@ class Item(AbstractObject):
 ####################################################################################
 ####################################################################################
 
-    def sanitize_id(self):
-        pass
+    # TODO ADD function to check if ITEM (content + file) already exists
 
+    def sanitize_id(self):
+        if ITEMS_FOLDER in self.id:
+            self.id = self.id.replace(ITEMS_FOLDER, '', 1)
+
+        # limit filename length
+        basename = self.get_basename()
+        if len(basename) > 255:
+            new_basename = f'{basename[:215]}{str(uuid4())}.gz'
+            self.id = rreplace(self.id, basename, new_basename, 1)
+
+
+
+
+
+        return self.id
 
     # # TODO: sanitize_id
     # # TODO: check if already exists ?
@@ -264,10 +279,9 @@ class Item(AbstractObject):
         """
         if options is None:
             options = set()
-        meta = {'id': self.id,
-                'date': self.get_date(separator=True),
-                'source': self.get_source(),
-                'tags': self.get_tags(r_list=True)}
+        meta = self.get_default_meta(tags=True)
+        meta['date'] = self.get_date(separator=True)
+        meta['source'] = self.get_source()
         # optional meta fields
         if 'content' in options:
             meta['content'] = self.get_content()
@@ -289,6 +303,8 @@ class Item(AbstractObject):
             meta['mimetype'] = self.get_mimetype(content=content)
         if 'investigations' in options:
             meta['investigations'] = self.get_investigations()
+        if 'link' in options:
+            meta['link'] = self.get_link(flask_context=True)
 
         # meta['encoding'] = None
         return meta
@@ -322,21 +338,10 @@ class Item(AbstractObject):
             nb_line += 1
         return {'nb': nb_line, 'max_length': max_length}
 
-    def get_languages(self, min_len=600, num_langs=3, min_proportion=0.2, min_probability=0.7):
-        all_languages = []
-        ## CLEAN CONTENT ##
-        content = self.get_html2text_content(ignore_links=True)
-        content = remove_all_urls_from_content(self.id, item_content=content) ##########################################
-        # REMOVE USELESS SPACE
-        content = ' '.join(content.split())
-        #- CLEAN CONTENT -#
-        #print(content)
-        #print(len(content))
-        if len(content) >= min_len: # # TODO:  # FIXME: check num langs limit
-            for lang in cld3.get_frequent_languages(content, num_langs=num_langs):
-                if lang.proportion >= min_proportion and lang.probability >= min_probability and lang.is_reliable:
-                    all_languages.append(lang)
-        return all_languages
+    # TODO RENAME ME
+    def get_languages(self, min_len=600, num_langs=3, min_proportion=0.2, min_probability=0.7, force_gcld3=False):
+        ld = LanguagesDetector(nb_langs=num_langs, min_proportion=min_proportion, min_probability=min_probability, min_len=min_len)
+        return ld.detect(self.get_content(), force_gcld3=force_gcld3)
 
     def get_mimetype(self, content=None):
         if not content:
@@ -482,7 +487,10 @@ def get_all_items_objects(filters={}):
         daterange = Date.get_daterange(date_from, date_to)
     else:
         date_from = get_obj_date_first('item')
-        daterange = Date.get_daterange(date_from, Date.get_today_date_str())
+        if date_from:
+            daterange = Date.get_daterange(date_from, Date.get_today_date_str())
+        else:
+            daterange = []
     if start_date:
         if int(start_date) > int(date_from):
             i = 0
@@ -621,61 +629,6 @@ def get_item_metadata(item_id, item_content=None):
 def get_item_content(item_id):
     return item_basic.get_item_content(item_id)
 
-def get_item_content_html2text(item_id, item_content=None, ignore_links=False):
-    if not item_content:
-        item_content = get_item_content(item_id)
-    h = html2text.HTML2Text()
-    h.ignore_links = ignore_links
-    h.ignore_images = ignore_links
-    return h.handle(item_content)
-
-def remove_all_urls_from_content(item_id, item_content=None):
-    if not item_content:
-        item_content = get_item_content(item_id)
-    regex = r'\b(?:http://|https://)?(?:[a-zA-Z\d-]{,63}(?:\.[a-zA-Z\d-]{,63})+)(?:\:[0-9]+)*(?:/(?:$|[a-zA-Z0-9\.\,\?\'\\\+&%\$#\=~_\-]+))*\b'
-    url_regex = re.compile(regex)
-    urls = url_regex.findall(item_content)
-    urls = sorted(urls, key=len, reverse=True)
-    for url in urls:
-        item_content = item_content.replace(url, '')
-
-    regex_pgp_public_blocs = r'-----BEGIN PGP PUBLIC KEY BLOCK-----[\s\S]+?-----END PGP PUBLIC KEY BLOCK-----'
-    regex_pgp_signature = r'-----BEGIN PGP SIGNATURE-----[\s\S]+?-----END PGP SIGNATURE-----'
-    regex_pgp_message = r'-----BEGIN PGP MESSAGE-----[\s\S]+?-----END PGP MESSAGE-----'
-    re.compile(regex_pgp_public_blocs)
-    re.compile(regex_pgp_signature)
-    re.compile(regex_pgp_message)
-
-    res = re.findall(regex_pgp_public_blocs, item_content)
-    for it in res:
-        item_content = item_content.replace(it, '')
-    res = re.findall(regex_pgp_signature, item_content)
-    for it in res:
-        item_content = item_content.replace(it, '')
-    res = re.findall(regex_pgp_message, item_content)
-    for it in res:
-        item_content = item_content.replace(it, '')
-
-    return item_content
-
-def get_item_languages(item_id, min_len=600, num_langs=3, min_proportion=0.2, min_probability=0.7):
-    all_languages = []
-
-    ## CLEAN CONTENT ##
-    content = get_item_content_html2text(item_id, ignore_links=True)
-    content = remove_all_urls_from_content(item_id, item_content=content)
-
-    # REMOVE USELESS SPACE
-    content = ' '.join(content.split())
-    #- CLEAN CONTENT -#
-
-    #print(content)
-    #print(len(content))
-    if len(content) >= min_len:
-        for lang in cld3.get_frequent_languages(content, num_langs=num_langs):
-            if lang.proportion >= min_proportion and lang.probability >= min_probability and lang.is_reliable:
-                all_languages.append(lang)
-    return all_languages
 
 # API
 # def get_item(request_dict):
@@ -926,13 +879,13 @@ def create_item(obj_id, obj_metadata, io_content):
 #         delete_item(child_id)
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 #     content = 'test file content'
 #     duplicates = {'tests/2020/01/02/test.gz': [{'algo':'ssdeep', 'similarity':75}, {'algo':'tlsh', 'similarity':45}]}
 #
-#     item = Item('tests/2020/01/02/test_save.gz')
+    # item = Item('tests/2020/01/02/test_save.gz')
 #     item.create(content, _save=False)
-    filters = {'date_from': '20230101', 'date_to': '20230501', 'sources': ['crawled', 'submitted'], 'start': ':submitted/2023/04/28/submitted_2b3dd861-a75d-48e4-8cec-6108d41450da.gz'}
-    gen = get_all_items_objects(filters=filters)
-    for obj_id in gen:
-        print(obj_id.id)
+#     filters = {'date_from': '20230101', 'date_to': '20230501', 'sources': ['crawled', 'submitted'], 'start': ':submitted/2023/04/28/submitted_2b3dd861-a75d-48e4-8cec-6108d41450da.gz'}
+#     gen = get_all_items_objects(filters=filters)
+#     for obj_id in gen:
+#         print(obj_id.id)

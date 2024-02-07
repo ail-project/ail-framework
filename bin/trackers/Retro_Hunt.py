@@ -111,7 +111,10 @@ class Retro_Hunt_Module(AbstractModule):
         self.redis_logger.warning(f'{self.module_name}, Retro Hunt {task_uuid} completed')
 
     def update_progress(self):
-        new_progress = self.nb_done * 100 / self.nb_objs
+        if self.nb_objs == 0:
+            new_progress = 100
+        else:
+            new_progress = self.nb_done * 100 / self.nb_objs
         if int(self.progress) != int(new_progress):
             print(new_progress)
             self.retro_hunt.set_progress(new_progress)
@@ -128,10 +131,16 @@ class Retro_Hunt_Module(AbstractModule):
         self.retro_hunt.add(self.obj.get_type(), self.obj.get_subtype(), obj_id)
 
         # TODO FILTER Tags
+
+        # TODO refactor Tags module for all object type
         # Tags
-        for tag in self.tags:
-            msg = f'{tag};{id}'
-            self.add_message_to_queue(msg, 'Tags')
+        if self.obj.get_type() == 'item':
+            for tag in self.tags:
+                msg = f'{tag};{obj_id}'
+                self.add_message_to_queue(msg, 'Tags')
+        else:
+            for tag in self.tags:
+                self.obj.add_tag(tag)
 
         # # Mails
         # EXPORTER MAILS

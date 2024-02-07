@@ -6,19 +6,29 @@ import sys
 import datetime
 import time
 
+import xxhash
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
 from lib.exceptions import ModuleQueueError
 from lib.ConfigLoader import ConfigLoader
+from lib import ail_core
 
 config_loader = ConfigLoader()
 r_queues = config_loader.get_redis_conn("Redis_Queues")
+r_obj_process = config_loader.get_redis_conn("Redis_Process")
+timeout_queue_obj = 172800
 config_loader = None
 
 MODULES_FILE = os.path.join(os.environ['AIL_HOME'], 'configs', 'modules.cfg')
 
+# # # # # # # #
+#             #
+#  AIL QUEUE  #
+#             #
+# # # # # # # #
 
 class AILQueue:
 
@@ -60,16 +70,38 @@ class AILQueue:
         # Update queues stats
         r_queues.hset('queues', self.name, self.get_nb_messages())
         r_queues.hset(f'modules', f'{self.pid}:{self.name}', int(time.time()))
+
         # Get Message
         message = r_queues.lpop(f'queue:{self.name}:in')
         if not message:
             return None
         else:
-            # TODO SAVE CURRENT ITEMS (OLD Module information)
+            row_mess = message.split(';', 1)
+            if len(row_mess) != 2:
+                return None, None, message
+                # raise Exception(f'Error: queue {self.name}, no AIL object provided')
+            else:
+                obj_global_id, mess = row_mess
+                m_hash = xxhash.xxh3_64_hexdigest(message)
+                add_processed_obj(obj_global_id, m_hash, module=self.name)
+                return obj_global_id, m_hash, mess
 
-            return message
+    def rename_message_obj(self, new_id, old_id):
+        # restrict rename function
+        if self.name == 'Mixer' or self.name == 'Global':
+            rename_processed_obj(new_id, old_id)
+        else:
+            raise ModuleQueueError('This Module can\'t rename an object ID')
 
-    def send_message(self, message, queue_name=None):
+        # condition -> not in any queue
+        # TODO EDIT meta
+
+
+
+    def end_message(self, obj_global_id, m_hash):
+        end_processed_obj(obj_global_id, m_hash, module=self.name)
+
+    def send_message(self, obj_global_id, message='', queue_name=None):
         if not self.subscribers_modules:
             raise ModuleQueueError('This Module don\'t have any subscriber')
         if queue_name:
@@ -80,8 +112,17 @@ class AILQueue:
                 raise ModuleQueueError('Queue name required. This module push to multiple queues')
             queue_name = list(self.subscribers_modules)[0]
 
+        message = f'{obj_global_id};{message}'
+        if obj_global_id != '::':
+            m_hash = xxhash.xxh3_64_hexdigest(message)
+        else:
+            m_hash = None
+
         # Add message to all modules
         for module_name in self.subscribers_modules[queue_name]:
+            if m_hash:
+                add_processed_obj(obj_global_id, m_hash, queue=module_name)
+
             r_queues.rpush(f'queue:{module_name}:in', message)
             # stats
             nb_mess = r_queues.llen(f'queue:{module_name}:in')
@@ -97,6 +138,7 @@ class AILQueue:
 
     def error(self):
         r_queues.hdel(f'modules', f'{self.pid}:{self.name}')
+
 
 def get_queues_modules():
     return r_queues.hkeys('queues')
@@ -131,6 +173,132 @@ def get_modules_queues_stats():
 
 def clear_modules_queues_stats():
     r_queues.delete('modules')
+
+
+# # # # # # # # #
+#               #
+#  OBJ QUEUES   # PROCESS ??
+#               #
+# # # # # # # # #
+
+
+def get_processed_objs():
+    return r_obj_process.smembers(f'objs:process')
+
+def get_processed_end_objs():
+    return r_obj_process.smembers(f'objs:processed')
+
+def get_processed_end_obj():
+    return r_obj_process.spop(f'objs:processed')
+
+def get_processed_objs_by_type(obj_type):
+    return r_obj_process.zrange(f'objs:process:{obj_type}', 0, -1)
+
+def is_processed_obj_queued(obj_global_id):
+    return r_obj_process.exists(f'obj:queues:{obj_global_id}')
+
+def is_processed_obj_moduled(obj_global_id):
+    return r_obj_process.exists(f'obj:modules:{obj_global_id}')
+
+def is_processed_obj(obj_global_id):
+    return is_processed_obj_queued(obj_global_id) or is_processed_obj_moduled(obj_global_id)
+
+def get_processed_obj_modules(obj_global_id):
+    return r_obj_process.zrange(f'obj:modules:{obj_global_id}', 0, -1)
+
+def get_processed_obj_queues(obj_global_id):
+    return r_obj_process.zrange(f'obj:queues:{obj_global_id}', 0, -1)
+
+def get_processed_obj(obj_global_id):
+    return {'modules': get_processed_obj_modules(obj_global_id), 'queues': get_processed_obj_queues(obj_global_id)}
+
+def add_processed_obj(obj_global_id, m_hash, module=None, queue=None):
+    obj_type = obj_global_id.split(':', 1)[0]
+    new_obj = r_obj_process.sadd(f'objs:process', obj_global_id)
+    # first process:
+    if new_obj:
+        r_obj_process.zadd(f'objs:process:{obj_type}', {obj_global_id: int(time.time())})
+    if queue:
+        r_obj_process.zadd(f'obj:queues:{obj_global_id}', {f'{queue}:{m_hash}': int(time.time())})
+    if module:
+        r_obj_process.zadd(f'obj:modules:{obj_global_id}', {f'{module}:{m_hash}': int(time.time())})
+        r_obj_process.zrem(f'obj:queues:{obj_global_id}', f'{module}:{m_hash}')
+
+def end_processed_obj(obj_global_id, m_hash, module=None, queue=None):
+    if queue:
+        r_obj_process.zrem(f'obj:queues:{obj_global_id}', f'{queue}:{m_hash}')
+    if module:
+        r_obj_process.zrem(f'obj:modules:{obj_global_id}', f'{module}:{m_hash}')
+
+        # TODO HANDLE QUEUE DELETE
+        # process completed
+        if not is_processed_obj(obj_global_id):
+            obj_type = obj_global_id.split(':', 1)[0]
+            r_obj_process.zrem(f'objs:process:{obj_type}', obj_global_id)
+            r_obj_process.srem(f'objs:process', obj_global_id)
+
+            r_obj_process.sadd(f'objs:processed', obj_global_id)   # TODO use list ??????
+
+def rename_processed_obj(new_id, old_id):
+    module = get_processed_obj_modules(old_id)
+    # currently in a module
+    if len(module) == 1:
+        module, x_hash = module[0].split(':', 1)
+        obj_type = old_id.split(':', 1)[0]
+        r_obj_process.zrem(f'obj:modules:{old_id}', f'{module}:{x_hash}')
+        r_obj_process.zrem(f'objs:process:{obj_type}', old_id)
+        r_obj_process.srem(f'objs:process', old_id)
+        add_processed_obj(new_id, x_hash, module=module)
+
+def get_last_queue_timeout():
+    epoch_update = r_obj_process.get('queue:obj:timeout:last')
+    if not epoch_update:
+        epoch_update = 0
+    return float(epoch_update)
+
+def timeout_process_obj(obj_global_id):
+    for q in get_processed_obj_queues(obj_global_id):
+        queue, x_hash = q.split(':', 1)
+        r_obj_process.zrem(f'obj:queues:{obj_global_id}', f'{queue}:{x_hash}')
+    for m in get_processed_obj_modules(obj_global_id):
+        module, x_hash = m.split(':', 1)
+        r_obj_process.zrem(f'obj:modules:{obj_global_id}', f'{module}:{x_hash}')
+
+    obj_type = obj_global_id.split(':', 1)[0]
+    r_obj_process.zrem(f'objs:process:{obj_type}', obj_global_id)
+    r_obj_process.srem(f'objs:process', obj_global_id)
+
+    r_obj_process.sadd(f'objs:processed', obj_global_id)
+    print(f'timeout: {obj_global_id}')
+
+
+def timeout_processed_objs():
+    curr_time = int(time.time())
+    time_limit = curr_time - timeout_queue_obj
+    for obj_type in ail_core.get_obj_queued():
+        for obj_global_id in r_obj_process.zrangebyscore(f'objs:process:{obj_type}', 0, time_limit):
+            timeout_process_obj(obj_global_id)
+    r_obj_process.set('queue:obj:timeout:last', time.time())
+
+def delete_processed_obj(obj_global_id):
+    for q in get_processed_obj_queues(obj_global_id):
+        queue, x_hash = q.split(':', 1)
+        r_obj_process.zrem(f'obj:queues:{obj_global_id}', f'{queue}:{x_hash}')
+    for m in get_processed_obj_modules(obj_global_id):
+        module, x_hash = m.split(':', 1)
+        r_obj_process.zrem(f'obj:modules:{obj_global_id}', f'{module}:{x_hash}')
+    obj_type = obj_global_id.split(':', 1)[0]
+    r_obj_process.zrem(f'objs:process:{obj_type}', obj_global_id)
+    r_obj_process.srem(f'objs:process', obj_global_id)
+
+###################################################################################
+
+
+# # # # # # # #
+#             #
+#    GRAPH    #
+#             #
+# # # # # # # #
 
 def get_queue_digraph():
     queues_ail = {}
@@ -223,64 +391,13 @@ def save_queue_digraph():
         sys.exit(1)
 
 
-###########################################################################################
-###########################################################################################
-###########################################################################################
-###########################################################################################
-###########################################################################################
-
-# def get_all_queues_name():
-#     return r_queues.hkeys('queues')
-#
-# def get_all_queues_dict_with_nb_elem():
-#     return r_queues.hgetall('queues')
-#
-# def get_all_queues_with_sorted_nb_elem():
-#     res = r_queues.hgetall('queues')
-#     res = sorted(res.items())
-#     return res
-#
-# def get_module_pid_by_queue_name(queue_name):
-#     return r_queues.smembers('MODULE_TYPE_{}'.format(queue_name))
-#
-# # # TODO: remove last msg part
-# def get_module_last_process_start_time(queue_name, module_pid):
-#     res = r_queues.get('MODULE_{}_{}'.format(queue_name, module_pid))
-#     if res:
-#         return res.split(',')[0]
-#     return None
-#
-# def get_module_last_msg(queue_name, module_pid):
-#     return r_queues.get('MODULE_{}_{}_PATH'.format(queue_name, module_pid))
-#
-# def get_all_modules_queues_stats():
-#     all_modules_queues_stats = []
-#     for queue_name, nb_elem_queue in get_all_queues_with_sorted_nb_elem():
-#         l_module_pid = get_module_pid_by_queue_name(queue_name)
-#         for module_pid in l_module_pid:
-#             last_process_start_time = get_module_last_process_start_time(queue_name, module_pid)
-#             if last_process_start_time:
-#                 last_process_start_time = datetime.datetime.fromtimestamp(int(last_process_start_time))
-#                 seconds = int((datetime.datetime.now() - last_process_start_time).total_seconds())
-#             else:
-#                 seconds = 0
-#             all_modules_queues_stats.append((queue_name, nb_elem_queue, seconds, module_pid))
-#     return all_modules_queues_stats
-#
-#
-# def _get_all_messages_from_queue(queue_name):
-#     #self.r_temp.hset('queues', self.subscriber_name, int(self.r_temp.scard(in_set)))
-#     return r_queues.smembers(f'queue:{queue_name}:in')
-#
-# # def is_message_in queue(queue_name):
-# #     pass
-#
-# def remove_message_from_queue(queue_name, message):
-#     queue_key = f'queue:{queue_name}:in'
-#     r_queues.srem(queue_key, message)
-#     r_queues.hset('queues', queue_name, int(r_queues.scard(queue_key)))
-
-
 if __name__ == '__main__':
     # clear_modules_queues_stats()
-    save_queue_digraph()
+    # save_queue_digraph()
+    oobj_global_id = 'item::submitted/2023/10/11/submitted_b5440009-05d5-4494-a807-a6d8e4a900cf.gz'
+    # print(get_processed_obj(oobj_global_id))
+    # delete_processed_obj(oobj_global_id)
+    # while True:
+    #     print(get_processed_obj(oobj_global_id))
+    #     time.sleep(0.5)
+    print(get_processed_end_objs())

@@ -20,12 +20,20 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib import ail_logger
 from lib import Tag
+from lib.ConfigLoader import ConfigLoader
 from lib import Duplicate
-from lib.correlations_engine import get_nb_correlations, get_correlations, add_obj_correlation, delete_obj_correlation, delete_obj_correlations, exists_obj_correlation, is_obj_correlated, get_nb_correlation_by_correl_type
+from lib.correlations_engine import get_nb_correlations, get_correlations, add_obj_correlation, delete_obj_correlation, delete_obj_correlations, exists_obj_correlation, is_obj_correlated, get_nb_correlation_by_correl_type, get_obj_inter_correlation
 from lib.Investigations import is_object_investigated, get_obj_investigations, delete_obj_investigations
+from lib.relationships_engine import get_obj_nb_relationships, add_obj_relationship
+from lib.Language import get_obj_translation
 from lib.Tracker import is_obj_tracked, get_obj_trackers, delete_obj_trackers
 
 logging.config.dictConfig(ail_logger.get_config(name='ail'))
+
+config_loader = ConfigLoader()
+# r_cache = config_loader.get_redis_conn("Redis_Cache")
+r_object = config_loader.get_db_conn("Kvrocks_Objects")
+config_loader = None
 
 class AbstractObject(ABC):
     """
@@ -59,13 +67,27 @@ class AbstractObject(ABC):
     def get_global_id(self):
         return f'{self.get_type()}:{self.get_subtype(r_str=True)}:{self.get_id()}'
 
-    def get_default_meta(self, tags=False):
+    def get_default_meta(self, tags=False, link=False):
         dict_meta = {'id': self.get_id(),
                      'type': self.get_type(),
-                     'subtype': self.get_subtype()}
+                     'subtype': self.get_subtype(r_str=True)}
         if tags:
             dict_meta['tags'] = self.get_tags()
+        if link:
+            dict_meta['link'] = self.get_link()
         return dict_meta
+
+    def _get_field(self, field):
+        if self.subtype is None:
+            return r_object.hget(f'meta:{self.type}:{self.id}', field)
+        else:
+            return r_object.hget(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', field)
+
+    def _set_field(self, field, value):
+        if self.subtype is None:
+            return r_object.hset(f'meta:{self.type}:{self.id}', field, value)
+        else:
+            return r_object.hset(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', field, value)
 
     ## Tags ##
     def get_tags(self, r_list=False):
@@ -198,6 +220,8 @@ class AbstractObject(ABC):
         else:
             return []
 
+    ## Correlation ##
+
     def _get_external_correlation(self, req_type, req_subtype, req_id, obj_type):
         """
         Get object correlation
@@ -248,8 +272,79 @@ class AbstractObject(ABC):
         return is_obj_correlated(self.type, self.subtype, self.id,
                                  object2.get_type(), object2.get_subtype(r_str=True), object2.get_id())
 
+    def get_correlation_iter(self, obj_type2, subtype2, obj_id2, correl_type):
+        return get_obj_inter_correlation(self.type, self.get_subtype(r_str=True), self.id, obj_type2, subtype2, obj_id2, correl_type)
+
+    def get_correlation_iter_obj(self, object2, correl_type):
+        return self.get_correlation_iter(object2.get_type(), object2.get_subtype(r_str=True), object2.get_id(), correl_type)
+
     def delete_correlation(self, type2, subtype2, id2):
         """
         Get object correlations
         """
         delete_obj_correlation(self.type, self.subtype, self.id, type2, subtype2, id2)
+
+    ## -Correlation- ##
+
+    ## Relationship ##
+
+    def get_nb_relationships(self, filter=[]):
+        return get_obj_nb_relationships(self.get_global_id())
+
+    def add_relationship(self, obj2_global_id, relationship, source=True):
+        # is source
+        if source:
+            print(self.get_global_id(), obj2_global_id, relationship)
+            add_obj_relationship(self.get_global_id(), obj2_global_id, relationship)
+        # is target
+        else:
+            add_obj_relationship(obj2_global_id, self.get_global_id(), relationship)
+
+    ## -Relationship- ##
+
+    ## Translation ##
+
+    def translate(self, content=None, field='', source=None, target='en'):
+        global_id = self.get_global_id()
+        if not content:
+            content = self.get_content()
+        return get_obj_translation(global_id, content, field=field, source=source, target=target)
+
+    ## -Translation- ##
+
+    ## Parent ##
+
+    def is_parent(self):
+        return r_object.exists(f'child:{self.type}:{self.get_subtype(r_str=True)}:{self.id}')
+
+    def is_children(self):
+        return r_object.hexists(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', 'parent')
+
+    def get_parent(self):
+        return r_object.hget(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', 'parent')
+
+    def get_childrens(self):
+        return r_object.smembers(f'child:{self.type}:{self.get_subtype(r_str=True)}:{self.id}')
+
+    def set_parent(self, obj_type=None, obj_subtype=None, obj_id=None, obj_global_id=None):  # TODO # REMOVE ITEM DUP
+        if not obj_global_id:
+            if obj_subtype is None:
+                obj_subtype = ''
+            obj_global_id = f'{obj_type}:{obj_subtype}:{obj_id}'
+        r_object.hset(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', 'parent', obj_global_id)
+        r_object.sadd(f'child:{obj_global_id}', self.get_global_id())
+
+    def add_children(self, obj_type=None, obj_subtype=None, obj_id=None, obj_global_id=None): # TODO # REMOVE ITEM DUP
+        if not obj_global_id:
+            if obj_subtype is None:
+                obj_subtype = ''
+            obj_global_id = f'{obj_type}:{obj_subtype}:{obj_id}'
+        r_object.sadd(f'child:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', obj_global_id)
+        r_object.hset(f'meta:{obj_global_id}', 'parent', self.get_global_id())
+
+    ## others objects ##
+    def add_obj_children(self, parent_global_id, son_global_id):
+        r_object.sadd(f'child:{parent_global_id}', son_global_id)
+        r_object.hset(f'meta:{son_global_id}', 'parent', parent_global_id)
+
+    ## Parent ##

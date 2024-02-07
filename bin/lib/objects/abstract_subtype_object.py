@@ -88,7 +88,10 @@ class AbstractSubtypeObject(AbstractObject, ABC):
     def _get_meta(self, options=None):
         if options is None:
             options = set()
-        meta = {'first_seen': self.get_first_seen(),
+        meta = {'id': self.id,
+                'type': self.type,
+                'subtype': self.subtype,
+                'first_seen': self.get_first_seen(),
                 'last_seen': self.get_last_seen(),
                 'nb_seen': self.get_nb_seen()}
         if 'icon' in options:
@@ -150,8 +153,11 @@ class AbstractSubtypeObject(AbstractObject, ABC):
 #               => data Retention + efficient search
 #
 #
+    def _add_subtype(self):
+        r_object.sadd(f'all_{self.type}:subtypes', self.subtype)
 
-    def add(self, date, item_id):
+    def add(self, date, obj=None):
+        self._add_subtype()
         self.update_daterange(date)
         update_obj_date(date, self.type, self.subtype)
         # daily
@@ -162,19 +168,21 @@ class AbstractSubtypeObject(AbstractObject, ABC):
         #######################################################################
         #######################################################################
 
-        # Correlations
-        self.add_correlation('item', '', item_id)
-        # domain
-        if is_crawled(item_id):
-            domain = get_item_domain(item_id)
-            self.add_correlation('domain', '', domain)
+        if obj:
+            # Correlations
+            self.add_correlation(obj.type, obj.get_subtype(r_str=True), obj.get_id())
 
+            if obj.type == 'item': # TODO same for message->chat ???
+                item_id = obj.get_id()
+                # domain
+                if is_crawled(item_id):
+                    domain = get_item_domain(item_id)
+                    self.add_correlation('domain', '', domain)
 
     # TODO:ADD objects + Stats
-    def create(self, first_seen, last_seen):
-        self.set_first_seen(first_seen)
-        self.set_last_seen(last_seen)
-
+    # def create(self, first_seen, last_seen):
+    #     self.set_first_seen(first_seen)
+    #     self.set_last_seen(last_seen)
 
     def _delete(self):
         pass

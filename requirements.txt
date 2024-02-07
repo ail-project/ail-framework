@@ -4,6 +4,8 @@ pymisp>=2.4.144
 d4-pyclient>=0.1.6
 
 thehive4py
+git+https://github.com/MISP/PyTaxonomies
+git+https://github.com/MISP/PyMISPGalaxies
 
 # Core
 redis>4.4.4
@@ -17,6 +19,7 @@ websockets>9.0
 crcmod
 mmh3>2.5
 ssdeep>3.3
+xxhash>3.1.0
 
 # ZMQ
 zmq
@@ -39,7 +42,8 @@ scrapy>2.0.0
 scrapy-splash>=0.7.2
 
 # Languages
-pycld3>0.20
+gcld3
+libretranslatepy
 
 #Graph
 numpy>1.18.1
@@ -67,7 +71,7 @@ pylibinjection>=0.2.4
 phonenumbers>8.12.1
 
 # Web
-flask>=1.1.4
+flask>=2.3.3
 flask-login
 bcrypt>3.1.6
 

@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chat Message - AIL</title>
+	<link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png') }}">
+
+  <!-- Core CSS -->
+	<link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/tags.css') }}" rel="stylesheet" type="text/css" />
+    <link href="{{ url_for('static', filename='css/ail-project.css') }}" rel="stylesheet">
+
+  <!-- JS -->
+	<script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/popper.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.dataTables.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='js/tags.js') }}"></script>
+
+	<style>
+        .chat-message-left,
+        .chat-message-right {
+            display: flex;
+            flex-shrink: 0;
+        }
+        .chat-message-right {
+            flex-direction: row-reverse;
+            margin-left: auto
+        }
+        .divider:after,
+        .divider:before {
+            content: "";
+            flex: 1;
+            height: 2px;
+            background: #eee;
+        }
+	</style>
+</head>
+<body>
+
+	{% include 'nav_bar.html' %}
+
+	<div class="container-fluid">
+		<div class="row">
+
+			{% include 'sidebars/sidebar_objects.html' %}
+
+			<div class="col-12 col-lg-10" id="core_content">
+
+                <div class="card my-3">
+                    <div class="card-header" style="background-color:#d9edf7;font-size: 15px">
+                        <h3 class="text-secondary">{{ meta["id"] }} :</h3>
+                        <ul class="list-group mb-2">
+                            <li class="list-group-item py-0">
+                                <div class="row">
+                                    <div class="col-md-10">
+                                        <table class="table">
+                                            <thead>
+                                                <tr>
+                                                    <th></th>
+                                                    <th>Date</th>
+                                                    <th>Username</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>
+                                                        <svg height="26" width="26">
+                                                            <g class="nodes">
+                                                                <circle cx="13" cy="13" r="13" fill="{{ meta["icon"]["color"] }}"></circle>
+                                                                <text x="13" y="13" text-anchor="middle" dominant-baseline="central" class="graph_node_icon {{ meta["icon"]["style"] }}" font-size="16px">{{ meta["icon"]["icon"] }}</text>
+                                                            </g>
+                                                        </svg>
+                                                        {{ meta["subtype"] }}
+                                                    </td>
+                                                    <td>{{ meta['full_date'] }}</td>
+                                                    <td>
+                                                        {% if 'username' in meta['user-account'] %}
+                                                            {{ meta['user-account']['username']['id'] }}
+                                                        {% endif %}
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                    <div class="col-md-1">
+                                        <div id="sparkline"></div>
+                                    </div>
+                                </div>
+                            </li>
+                        </ul>
+
+                        <div>
+                            <h5>
+                                <span>
+                                    {% include 'modals/edit_tag.html' %}
+
+                                    {% for tag in meta['tags'] %}
+                                        <button class="btn btn-{{ bootstrap_label[loop.index0 % 5] }}" data-toggle="modal" data-target="#edit_tags_modal"
+                                        data-tagid="{{ tag }}" data-objtype="{{ meta['type'] }}" data-objsubtype="" data-objid="{{ meta['id'] }}">
+                                            {{ tag }}
+                                        </button>
+                                    {%  endfor %}
+                                    {% include 'modals/add_tags.html' %}
+                                    <button type="button" class="btn btn-light" data-toggle="modal" data-target="#add_tags_modal">
+                                        <i class="far fa-plus-square"></i>
+                                    </button>
+                                </span>
+                            </h5>
+                        </div>
+
+                        <div class="d-flex flex-row-reverse bd-highlight">
+                            <div>
+                                <a href="{{ url_for('correlation.show_correlation')}}?type={{ meta['type'] }}&id={{ meta['id'] }}" target="_blank">
+                                    <button class="btn btn-lg btn-info"><i class="fas fa-project-diagram"></i> Correlations Graph</button>
+                                </a>
+                            </div>
+                            <div>
+                                {% with obj_type=meta['type'], obj_id=meta['id'], obj_subtype=''%}
+                                    {% include 'modals/investigations_register_obj.html' %}
+                                {% endwith %}
+                                <div class="mr-2">
+                                    <button type="button" class="btn btn-lg btn-primary" data-toggle="modal" data-target="#investigations_register_obj_modal">
+                                        <i class="fas fa-microscope"></i> Investigations
+                                    </button>
+                                </div>
+                            </div>
+                          </div>
+
+                    </div>
+                </div>
+
+
+                {% include 'objects/image/block_blur_img_slider.html' %}
+                {% with translate_url=url_for('chats_explorer.objects_message', id=meta['id']), obj_id=meta['id'] %}
+                    {% include 'chats_explorer/block_translation.html' %}
+                {% endwith %}
+
+
+                <div class="position-relative">
+                    <div class="chat-messages p-2">
+
+                        <div class="divider d-flex align-items-center mb-4">
+                                <p class="text-center h2 mx-3 mb-0" style="color: #a2aab7;">
+                                    <span class="badge badge-secondary mb-2" id="date_section_{{ meta['date'] }}">{{ meta['date'] }}</span>
+                                </p>
+                            </div>
+
+                        {% with message=meta %}
+                            {% include 'chats_explorer/block_message.html' %}
+                        {% endwith %}
+
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </div>
+
+<script>
+    var chart = {};
+    $(document).ready(function(){
+        $("#page-Decoded").addClass("active");
+        $("#nav_chat").addClass("active");
+
+  });
+
+function toggle_sidebar(){
+	if($('#nav_menu').is(':visible')){
+		$('#nav_menu').hide();
+		$('#side_menu').removeClass('border-right')
+		$('#side_menu').removeClass('col-lg-2')
+		$('#core_content').removeClass('col-lg-10')
+	}else{
+		$('#nav_menu').show();
+		$('#side_menu').addClass('border-right')
+		$('#side_menu').addClass('col-lg-2')
+		$('#core_content').addClass('col-lg-10')
+	}
+}
+</script>
+
+</body>
+
+</html>

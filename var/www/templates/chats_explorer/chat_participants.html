@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Chats Protocols - AIL</title>
+	<link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png') }}">
+
+  <!-- Core CSS -->
+	<link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet">
+
+  <!-- JS -->
+	<script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/popper.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.dataTables.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='js/d3.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='js/d3/heatmap_week_hour.js')}}"></script>
+
+</head>
+<body>
+
+	{% include 'nav_bar.html' %}
+
+	<div class="container-fluid">
+		<div class="row">
+
+			{% include 'sidebars/sidebar_objects.html' %}
+
+			<div class="col-12 col-lg-10" id="core_content">
+
+                <h5>{{ meta['type'] }} {{ meta['subtype'] }} {{ meta['id'] }}</h5>
+
+                <h4>Participants:</h4>
+                <table id="tableparticipantss" class="table">
+                    <thead class="bg-dark text-white">
+                    <tr>
+                        <th>Icon</th>
+                        <th>Username</th>
+                        <th>ID</th>
+                        <th>info</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th><i class="fas fa-comment-dots"></i></th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody style="font-size: 15px;">
+                    {% for user_meta in meta["participants"] %}
+                        <tr>
+                            <td>
+                                <a href="{{ url_for('chats_explorer.objects_user_account')}}?subtype={{ user_meta['subtype'] }}&id={{ user_meta['id'] }}">
+                                    <img src="{% if user_meta['icon'] %}{{ url_for('objects_image.image', filename=user_meta['icon'])}}{% else %}{{ url_for('static', filename='image/ail-icon.png') }}{% endif %}"
+                 class="rounded-circle mr-1" alt="{{ user_meta['id'] }}" width="40" height="40">
+                                <a>
+                            </td>
+                            <td>
+                                {% if user_meta['username'] %}
+                                    <b>{{ user_meta['username']['id'] }}</b>
+                                {% endif %}
+                            </td>
+                            <td><a href="{{ url_for('chats_explorer.objects_user_account') }}?subtype={{ user_meta['subtype'] }}&id={{ user_meta['id'] }}">{{ user_meta['id'] }}</a></td>
+                            <td>
+                                {% if user_meta['info'] %}
+                                    {{ user_meta['info'] }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user_meta['first_seen'] %}
+                                    {{ user_meta['first_seen'][0:4] }}-{{ user_meta['first_seen'][4:6] }}-{{ user_meta['first_seen'][6:8] }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user_meta['last_seen'] %}
+                                    {{ user_meta['last_seen'][0:4] }}-{{ user_meta['last_seen'][4:6] }}-{{ user_meta['last_seen'][6:8] }}
+                                {% endif %}
+                            </td>
+                            <td>{{ user_meta['nb_messages'] }}</td>
+                            <td>
+                                <div class="d-flex flex-row-reverse bd-highlight">
+{#                                    <div>#}
+{#                                        <a class="btn" target="_blank" href="{{ url_for('import_export.add_object_id_to_export')}}?type={{obj_type}}{%if obj_subtype%}&subtype={{obj_subtype}}{%endif%}&id={{obj_id}}&lvl={{obj_lvl}}">#}
+{#                                            <img id="misp-logo" src="{{ url_for('static', filename='image/misp-logo.png')}}" height="25">#}
+{#                                        </a>#}
+{#                                    </div>#}
+                                    <div>
+                                        <a class="btn btn-outline-light" href="{{ url_for('correlation.show_correlation')}}?type={{ user_meta['type'] }}&subtype={{ user_meta['subtype'] }}&id={{ user_meta['id'] }}" target="_blank" style="font-size: 15px">
+                                            <i class="fas fa-project-diagram text-secondary"></i>
+                                        </a>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+
+            </div>
+
+        </div>
+    </div>
+
+<script>
+    $(document).ready(function(){
+        $("#page-Decoded").addClass("active");
+        $("#nav_chat").addClass("active");
+
+        $('#tableparticipantss').DataTable({
+                "aLengthMenu": [[5, 10, 15, -1], [5, 10, 15, "All"]],
+                "iDisplayLength": 10,
+                "order": [[ 5, "desc" ]]
+        });
+  });
+
+function toggle_sidebar(){
+	if($('#nav_menu').is(':visible')){
+		$('#nav_menu').hide();
+		$('#side_menu').removeClass('border-right')
+		$('#side_menu').removeClass('col-lg-2')
+		$('#core_content').removeClass('col-lg-10')
+	}else{
+		$('#nav_menu').show();
+		$('#side_menu').addClass('border-right')
+		$('#side_menu').addClass('col-lg-2')
+		$('#core_content').addClass('col-lg-10')
+	}
+}
+
+</script>
+
+</body>
+
+</html>

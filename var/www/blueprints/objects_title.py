@@ -5,6 +5,7 @@
     Blueprint Flask: crawler splash endpoints: dashboard, onion crawler ...
 '''
 
+import json
 import os
 import sys
 
@@ -18,6 +19,7 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
+from  lib.ail_core import paginate_iterator
 from lib.objects import Titles
 from packages import Date
 
@@ -27,8 +29,11 @@ objects_title = Blueprint('objects_title', __name__, template_folder=os.path.joi
 # ============ VARIABLES ============
 bootstrap_label = ['primary', 'success', 'danger', 'warning', 'info']
 
-
 # ============ FUNCTIONS ============
+def create_json_response(data, status_code):
+    return Response(json.dumps(data, indent=2, sort_keys=True), mimetype='application/json'), status_code
+
+# ============= ROUTES ==============
 @objects_title.route("/objects/title", methods=['GET'])
 @login_required
 @login_read_only
@@ -68,19 +73,61 @@ def objects_title_range_json():
     date_to = date['date_to']
     return jsonify(Titles.Titles().api_get_chart_nb_by_daterange(date_from, date_to))
 
-@objects_title.route("/objects/title/search", methods=['POST'])
+@objects_title.route("/objects/title/search_post", methods=['POST'])
 @login_required
-@login_read_only
+@login_analyst
+def objects_title_search_post():
+    to_search = request.form.get('to_search')
+    search_type = request.form.get('search_type', 'id')
+    case_sensitive = request.form.get('case_sensitive')
+    case_sensitive = bool(case_sensitive)
+    page = request.form.get('page', 1)
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        page = 1
+    return redirect(
+        url_for('objects_title.objects_title_search', search=to_search, page=page,
+                search_type=search_type, case_sensitive=case_sensitive))
+
+@objects_title.route("/objects/title/search", methods=['GET'])
+@login_required
+@login_analyst
 def objects_title_search():
-    to_search = request.form.get('object_id')
+    to_search = request.args.get('search')
+    type_to_search = request.args.get('search_type', 'id')
+    case_sensitive = request.args.get('case_sensitive')
+    case_sensitive = bool(case_sensitive)
+    page = request.args.get('page', 1)
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        page = 1
 
-    # TODO SANITIZE ID
-    # TODO Search all
-    title = Titles.Title(to_search)
-    if not title.exists():
-        abort(404)
+    titles = Titles.Titles()
+
+    if type_to_search == 'id':
+        if len(type_to_search) == 64:
+            title = Titles.Title(to_search)
+            if not title.exists():
+                abort(404)
+            else:
+                return redirect(title.get_link(flask_context=True))
+        else:
+            search_result = titles.search_by_id(to_search, r_pos=True, case_sensitive=case_sensitive)
+    elif type_to_search == 'content':
+        search_result = titles.search_by_content(to_search, r_pos=True, case_sensitive=case_sensitive)
     else:
-        return redirect(title.get_link(flask_context=True))
+        return create_json_response({'error': 'Unknown search type'}, 400)
 
-# ============= ROUTES ==============
+    if search_result:
+        ids = sorted(search_result.keys())
+        dict_page = paginate_iterator(ids, nb_obj=500, page=page)
+        dict_objects = titles.get_metas(dict_page['list_elem'], options={'sparkline'})
+    else:
+        dict_objects = {}
+        dict_page = {}
 
+    return render_template("search_title_result.html", dict_objects=dict_objects, search_result=search_result,
+                           dict_page=dict_page,
+                           to_search=to_search, case_sensitive=case_sensitive, type_to_search=type_to_search)

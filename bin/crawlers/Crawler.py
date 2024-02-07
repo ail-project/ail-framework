@@ -6,6 +6,7 @@ import logging.config
 import sys
 import time
 
+from pyail import PyAIL
 from requests.exceptions import ConnectionError
 
 sys.path.append(os.environ['AIL_BIN'])
@@ -16,10 +17,13 @@ from modules.abstract_module import AbstractModule
 from lib import ail_logger
 from lib import crawlers
 from lib.ConfigLoader import ConfigLoader
+from lib.objects import CookiesNames
+from lib.objects import Etags
 from lib.objects.Domains import Domain
 from lib.objects.Items import Item
 from lib.objects import Screenshots
 from lib.objects import Titles
+from trackers.Tracker_Yara import Tracker_Yara
 
 logging.config.dictConfig(ail_logger.get_config(name='crawlers'))
 
@@ -33,11 +37,22 @@ class Crawler(AbstractModule):
         # Waiting time in seconds between to message processed
         self.pending_seconds = 1
 
+        self.tracker_yara = Tracker_Yara(queue=False)
+
         config_loader = ConfigLoader()
 
         self.default_har = config_loader.get_config_boolean('Crawler', 'default_har')
         self.default_screenshot = config_loader.get_config_boolean('Crawler', 'default_screenshot')
         self.default_depth_limit = config_loader.get_config_int('Crawler', 'default_depth_limit')
+
+        ail_url_to_push_discovery = config_loader.get_config_str('Crawler', 'ail_url_to_push_onion_discovery')
+        ail_key_to_push_discovery = config_loader.get_config_str('Crawler', 'ail_key_to_push_onion_discovery')
+        if ail_url_to_push_discovery and ail_key_to_push_discovery:
+            ail = PyAIL(ail_url_to_push_discovery, ail_key_to_push_discovery, ssl=False)
+            if ail.ping_ail():
+                self.ail_to_push_discovery = ail
+        else:
+            self.ail_to_push_discovery = None
 
         # TODO: LIMIT MAX NUMBERS OF CRAWLED PAGES
 
@@ -56,8 +71,9 @@ class Crawler(AbstractModule):
         self.har = None
         self.screenshot = None
         self.root_item = None
-        self.har_dir = None
+        self.date = None
         self.items_dir = None
+        self.original_domain = None
         self.domain = None
 
         # TODO Replace with warning list ???
@@ -97,7 +113,7 @@ class Crawler(AbstractModule):
         self.crawler_scheduler.update_queue()
         self.crawler_scheduler.process_queue()
 
-        self.refresh_lacus_status() # TODO LOG ERROR
+        self.refresh_lacus_status()  # TODO LOG ERROR
         if not self.is_lacus_up:
             return None
 
@@ -105,7 +121,9 @@ class Crawler(AbstractModule):
         if crawlers.get_nb_crawler_captures() < crawlers.get_crawler_max_captures():
             task_row = crawlers.add_task_to_lacus_queue()
             if task_row:
-                task_uuid, priority = task_row
+                task, priority = task_row
+                task.start()
+                task_uuid = task.uuid
                 try:
                     self.enqueue_capture(task_uuid, priority)
                 except ConnectionError:
@@ -120,15 +138,30 @@ class Crawler(AbstractModule):
         if capture:
             try:
                 status = self.lacus.get_capture_status(capture.uuid)
-                if status != crawlers.CaptureStatus.DONE:  # TODO ADD GLOBAL TIMEOUT-> Save start time ### print start time
+                if status == crawlers.CaptureStatus.DONE:
+                    return capture
+                elif status == crawlers.CaptureStatus.UNKNOWN:
+                    capture_start = capture.get_start_time(r_str=False)
+                    if capture_start == 0:
+                        task = capture.get_task()
+                        task.delete()
+                        capture.delete()
+                        self.logger.warning(f'capture UNKNOWN ERROR STATE, {task.uuid} Removed from queue')
+                        return None
+                    if int(time.time()) - capture_start > 600:  # TODO ADD in new crawler config
+                        task = capture.get_task()
+                        task.reset()
+                        capture.delete()
+                        self.logger.warning(f'capture UNKNOWN Timeout, {task.uuid} Send back in queue')
+                    else:
+                        capture.update(status)
+                else:
                     capture.update(status)
                     print(capture.uuid, crawlers.CaptureStatus(status).name, int(time.time()))
-                else:
-                    return capture
 
             except ConnectionError:
                 print(capture.uuid)
-                capture.update(self, -1)
+                capture.update(-1)
                 self.refresh_lacus_status()
 
         time.sleep(self.pending_seconds)
@@ -169,6 +202,24 @@ class Crawler(AbstractModule):
 
         crawlers.create_capture(capture_uuid, task_uuid)
         print(task.uuid, capture_uuid, 'launched')
+
+        if self.ail_to_push_discovery:
+
+            if task.get_depth() == 1 and priority < 10 and task.get_domain().endswith('.onion'):
+                har = task.get_har()
+                screenshot = task.get_screenshot()
+                # parent_id = task.get_parent()
+                # if parent_id != 'manual' and parent_id != 'auto':
+                #     parent = parent_id[19:-36]
+                # else:
+                #     parent = 'AIL_capture'
+
+                if not url:
+                    raise Exception(f'Error: url is None, {task.uuid}, {capture_uuid}, {url}')
+
+                self.ail_to_push_discovery.add_crawler_capture(task_uuid, capture_uuid, url, har=har,  # parent=parent,
+                                                               screenshot=screenshot, depth_limit=1, proxy='force_tor')
+                print(task.uuid, capture_uuid, url, 'Added to ail_to_push_discovery')
         return capture_uuid
 
     # CRAWL DOMAIN
@@ -178,34 +229,52 @@ class Crawler(AbstractModule):
         task = capture.get_task()
         domain = task.get_domain()
         print(domain)
+        if not domain:
+            if self.debug:
+                raise Exception(f'Error: domain {domain} - task {task.uuid} - capture {capture.uuid}')
+            else:
+                self.logger.critical(f'Error: domain {domain} - task {task.uuid} - capture {capture.uuid}')
+                print(f'Error: domain {domain}')
+            return None
 
         self.domain = Domain(domain)
+        self.original_domain = Domain(domain)
 
         epoch = int(time.time())
         parent_id = task.get_parent()
 
         entries = self.lacus.get_capture(capture.uuid)
-        print(entries['status'])
+        print(entries.get('status'))
         self.har = task.get_har()
         self.screenshot = task.get_screenshot()
         # DEBUG
         # self.har = True
         # self.screenshot = True
-        str_date = crawlers.get_current_date(separator=True)
-        self.har_dir = crawlers.get_date_har_dir(str_date)
-        self.items_dir = crawlers.get_date_crawled_items_source(str_date)
+        self.date = crawlers.get_current_date(separator=True)
+        self.items_dir = crawlers.get_date_crawled_items_source(self.date)
         self.root_item = None
 
         # Save Capture
         self.save_capture_response(parent_id, entries)
 
-        self.domain.update_daterange(str_date.replace('/', ''))
-        # Origin + History
+        self.domain.update_daterange(self.date.replace('/', ''))
+        # Origin + History + tags
         if self.root_item:
             self.domain.set_last_origin(parent_id)
-            self.domain.add_history(epoch, root_item=self.root_item)
-        elif self.domain.was_up():
-            self.domain.add_history(epoch, root_item=epoch)
+            # Tags
+            for tag in task.get_tags():
+                self.domain.add_tag(tag)
+        self.domain.add_history(epoch, root_item=self.root_item)
+
+        if self.domain != self.original_domain:
+            self.original_domain.update_daterange(self.date.replace('/', ''))
+            if self.root_item:
+                self.original_domain.set_last_origin(parent_id)
+                # Tags
+                for tag in task.get_tags():
+                    self.domain.add_tag(tag)
+            self.original_domain.add_history(epoch, root_item=self.root_item)
+            crawlers.update_last_crawled_domain(self.original_domain.get_domain_type(), self.original_domain.id, epoch)
 
         crawlers.update_last_crawled_domain(self.domain.get_domain_type(), self.domain.id, epoch)
         print('capture:', capture.uuid, 'completed')
@@ -218,12 +287,12 @@ class Crawler(AbstractModule):
         if 'error' in entries:
             # TODO IMPROVE ERROR MESSAGE
             self.logger.warning(str(entries['error']))
-            print(entries['error'])
+            print(entries.get('error'))
             if entries.get('html'):
                 print('retrieved content')
                 # print(entries.get('html'))
 
-        if 'last_redirected_url' in entries and entries['last_redirected_url']:
+        if 'last_redirected_url' in entries and entries.get('last_redirected_url'):
             last_url = entries['last_redirected_url']
             unpacked_last_url = crawlers.unpack_url(last_url)
             current_domain = unpacked_last_url['domain']
@@ -238,33 +307,40 @@ class Crawler(AbstractModule):
         else:
             last_url = f'http://{self.domain.id}'
 
-        if 'html' in entries and entries['html']:
+        if 'html' in entries and entries.get('html'):
             item_id = crawlers.create_item_id(self.items_dir, self.domain.id)
-            print(item_id)
-            gzip64encoded = crawlers.get_gzipped_b64_item(item_id, entries['html'])
+            item = Item(item_id)
+            print(item.id)
+
+            gzip64encoded = crawlers.get_gzipped_b64_item(item.id, entries['html'])
             # send item to Global
-            relay_message = f'crawler {item_id} {gzip64encoded}'
-            self.add_message_to_queue(relay_message, 'Importers')
+            relay_message = f'crawler {gzip64encoded}'
+            self.add_message_to_queue(obj=item, message=relay_message, queue='Importers')
 
-            # Tag
-            msg = f'infoleak:submission="crawler";{item_id}'
-            self.add_message_to_queue(msg, 'Tags')
+            # Tag # TODO replace me with metadata to tags
+            msg = f'infoleak:submission="crawler"'  # TODO FIXME
+            self.add_message_to_queue(obj=item, message=msg, queue='Tags')
 
+            # TODO replace me with metadata to add
             crawlers.create_item_metadata(item_id, last_url, parent_id)
             if self.root_item is None:
                 self.root_item = item_id
             parent_id = item_id
 
-            item = Item(item_id)
-
             title_content = crawlers.extract_title_from_html(entries['html'])
             if title_content:
                 title = Titles.create_title(title_content)
-                title.add(item.get_date(), item_id)
+                title.add(item.get_date(), item)
+                # Tracker
+                self.tracker_yara.compute_manual(title)
+                if not title.is_tags_safe():
+                    unsafe_tag = 'dark-web:topic="pornography-child-exploitation"'
+                    self.domain.add_tag(unsafe_tag)
+                    item.add_tag(unsafe_tag)
 
             # SCREENSHOT
             if self.screenshot:
-                if 'png' in entries and entries['png']:
+                if 'png' in entries and entries.get('png'):
                     screenshot = Screenshots.create_screenshot(entries['png'], b64=False)
                     if screenshot:
                         if not screenshot.is_tags_safe():
@@ -278,8 +354,19 @@ class Crawler(AbstractModule):
                             screenshot.add_correlation('domain', '', self.domain.id)
             # HAR
             if self.har:
-                if 'har' in entries and entries['har']:
-                    crawlers.save_har(self.har_dir, item_id, entries['har'])
+                if 'har' in entries and entries.get('har'):
+                    har_id = crawlers.create_har_id(self.date, item_id)
+                    crawlers.save_har(har_id, entries['har'])
+                    for cookie_name in crawlers.extract_cookies_names_from_har(entries['har']):
+                        print(cookie_name)
+                        cookie = CookiesNames.create(cookie_name)
+                        cookie.add(self.date.replace('/', ''), self.domain)
+                    for etag_content in crawlers.extract_etag_from_har(entries['har']):
+                        print(etag_content)
+                        etag = Etags.create(etag_content)
+                        etag.add(self.date.replace('/', ''), self.domain)
+                    crawlers.extract_hhhash(entries['har'], self.domain.id, self.date.replace('/', ''))
+
         # Next Children
         entries_children = entries.get('children')
         if entries_children:

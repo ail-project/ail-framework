@@ -23,6 +23,7 @@ from lib import ail_logger
 from lib.ail_queues import AILQueue
 from lib import regex_helper
 from lib.exceptions import ModuleQueueError
+from lib.objects.ail_objects import get_obj_from_global_id
 
 logging.config.dictConfig(ail_logger.get_config(name='modules'))
 
@@ -47,6 +48,8 @@ class AbstractModule(ABC):
         # Setup the I/O queues
         if queue:
             self.queue = AILQueue(self.module_name, self.pid)
+            self.obj = None
+            self.sha256_mess = None
 
         # Init Redis Logger
         self.redis_logger = publisher
@@ -70,27 +73,52 @@ class AbstractModule(ABC):
         # Debug Mode
         self.debug = False
 
+    def get_obj(self):
+        return self.obj
+
     def get_message(self):
         """
         Get message from the Redis Queue (QueueIn)
         Input message can change between modules
         ex: '<item id>'
         """
-        return self.queue.get_message()
+        message = self.queue.get_message()
+        if message:
+            obj_global_id, sha256_mess, mess = message
+            if obj_global_id:
+                self.sha256_mess = sha256_mess
+                self.obj = get_obj_from_global_id(obj_global_id)
+            else:
+                self.sha256_mess = None
+                self.obj = None
+            return mess
+        self.sha256_mess = None
+        self.obj = None
+        return None
 
-    def add_message_to_queue(self, message, queue_name=None):
+    # TODO ADD META OBJ ????
+    def add_message_to_queue(self, obj=None, message='', queue=None):
         """
         Add message to queue
+        :param obj: AILObject
         :param message: message to send in queue
-        :param queue_name: queue or module name
+        :param queue: queue name or module name
 
         ex: add_message_to_queue(item_id, 'Mail')
         """
-        self.queue.send_message(message, queue_name)
-        # add to new set_module
+        if obj:
+            obj_global_id = obj.get_global_id()
+        elif self.obj:
+            obj_global_id = self.obj.get_global_id()
+        else:
+            obj_global_id = '::'
+        self.queue.send_message(obj_global_id, message, queue)
 
     def get_available_queues(self):
         return self.queue.get_out_queues()
+
+    def regex_match(self, regex, obj_id, content):
+        return regex_helper.regex_match(self.r_cache_key, regex, obj_id, content, max_time=self.max_execution_time)
 
     def regex_search(self, regex, obj_id, content):
         return regex_helper.regex_search(self.r_cache_key, regex, obj_id, content, max_time=self.max_execution_time)
@@ -130,7 +158,7 @@ class AbstractModule(ABC):
             # Get one message (ex:item id) from the Redis Queue (QueueIn)
             message = self.get_message()
 
-            if message:
+            if message or self.obj:
                 try:
                     # Module processing with the message from the queue
                     self.compute(message)
@@ -152,6 +180,11 @@ class AbstractModule(ABC):
                 # remove from set_module
                 ## check if item process == completed
 
+                if self.obj:
+                    self.queue.end_message(self.obj.get_global_id(), self.sha256_mess)
+                    self.obj = None
+                    self.sha256_mess = None
+
             else:
                 self.computeNone()
                 # Wait before next process
@@ -170,6 +203,10 @@ class AbstractModule(ABC):
         Main method of the Module to implement
         """
         pass
+
+    def compute_manual(self, obj, message=None):
+        self.obj = obj
+        return self.compute(message)
 
     def computeNone(self):
         """

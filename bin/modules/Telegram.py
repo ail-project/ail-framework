@@ -41,7 +41,7 @@ class Telegram(AbstractModule):
         self.logger.info(f"Module {self.module_name} initialized")
 
     def compute(self, message, r_result=False):
-        item = Item(message)
+        item = self.get_obj()
         item_content = item.get_content()
         item_date = item.get_date()
 
@@ -58,7 +58,7 @@ class Telegram(AbstractModule):
             user_id = dict_url.get('username')
             if user_id:
                 username = Username(user_id, 'telegram')
-                username.add(item_date, item.id)
+                username.add(item_date, item)
                 print(f'username: {user_id}')
             invite_hash = dict_url.get('invite_hash')
             if invite_hash:
@@ -73,7 +73,7 @@ class Telegram(AbstractModule):
             user_id = dict_url.get('username')
             if user_id:
                 username = Username(user_id, 'telegram')
-                username.add(item_date, item.id)
+                username.add(item_date, item)
                 print(f'username: {user_id}')
             invite_hash = dict_url.get('invite_hash')
             if invite_hash:
@@ -86,8 +86,8 @@ class Telegram(AbstractModule):
         # CREATE TAG
         if invite_code_found:
             # tags
-            msg = f'infoleak:automatic-detection="telegram-invite-hash";{item.id}'
-            self.add_message_to_queue(msg, 'Tags')
+            tag = 'infoleak:automatic-detection="telegram-invite-hash"'
+            self.add_message_to_queue(message=tag, queue='Tags')
 
 
 if __name__ == "__main__":
