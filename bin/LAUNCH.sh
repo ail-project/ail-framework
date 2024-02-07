@@ -24,6 +24,8 @@ else
     exit 1
 fi
 
+export AIL_APP_SECRET_KEY="$(uuidgen)"
+
 export PATH=$AIL_VENV/bin:$PATH
 export PATH=$AIL_HOME:$PATH
 export PATH=$AIL_REDIS:$PATH
