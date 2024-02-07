@@ -107,10 +107,10 @@ app.register_blueprint(objects_title, url_prefix=baseUrl)
 # =========       =========#
 
 # ========= Cookie name ========
-app.config.update(SESSION_COOKIE_NAME='ail_framework_{}'.format(uuid.uuid4().int))
+app.config.update(SESSION_COOKIE_NAME='ail_session')
 
 # ========= session ========
-app.secret_key = str(random.getrandbits(256))
+app.secret_key = os.getenv('AIL_APP_SECRET_KEY', 'ailAppSecretKey')
 login_manager = LoginManager()
 login_manager.login_view = 'root.login'
 login_manager.init_app(app)
