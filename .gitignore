@@ -39,6 +39,7 @@ var/www/templates/header.html
 var/www/submitted
 var/www/server.crt
 var/www/server.key
+var/www/gunicorn.conf.py
 
 # Local config
 configs/keys

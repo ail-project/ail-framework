@@ -85,6 +85,8 @@ https://github.com/saffsd/langid.py/archive/master.zip
 
 requests
 
+# WSGI server to run Flask app
+gunicorn==20.1.0
 
 ##### Old packages
 # texttable
