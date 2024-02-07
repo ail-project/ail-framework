@@ -461,12 +461,16 @@ function launch_scripts {
 }
 
 function launch_flask {
+    conf_dir="${AIL_HOME}/configs/"
+
     if [[ ! $isflasked ]]; then
         flask_dir=${AIL_FLASK}
         screen -dmS "Flask_AIL"
         sleep 0.1
         echo -e $GREEN"\t* Launching Flask server"$DEFAULT
-        screen -S "Flask_AIL" -X screen -t "Flask_server" bash -c "cd $flask_dir; ls; ${ENV_PY} ./Flask_server.py; read x"
+        # screen -S "Flask_AIL" -X screen -t "Flask_server" bash -c "cd $flask_dir; ls; ${ENV_PY} ./Flask_server.py; read x"
+        screen -S "Flask_AIL" -X screen -t "Flask_server" \
+            bash -c "cd $flask_dir; ls; cp $conf_dir/gunicorn.conf.py .; gunicorn -c gunicorn.conf.py Flask_server:app; read x"
     else
         echo -e $RED"\t* A Flask screen is already launched"$DEFAULT
     fi
@@ -511,6 +515,10 @@ function killall {
         if [[ $iskvrocks ]]; then
             echo -e $GREEN"Gracefully closing Kvrocks servers"$DEFAULT
             shutting_down_kvrocks;
+        fi
+        if [[ $isflasked ]]; then
+            echo -e $GREEN"Closing all gunicorn (Flask) servers"$DEFAULT
+            pkill gunicorn
         fi
         echo -e $GREEN"Killing all"$DEFAULT
         kill $isredis $isardb $iskvrocks $islogged $is_ail_core $isscripted $isflasked $isfeeded $is_ail_2_ail
