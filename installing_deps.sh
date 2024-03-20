@@ -6,12 +6,18 @@ set -e
 ## bash debug mode toggle below
 #set -x
 
-sudo apt-get update
+# if running as root (eg inside a base ubuntu docker container)
+if [ "$EUID" -eq 0 ]; then
+    apt-get update
+    apt-get install -y sudo
+else
+    sudo apt-get update
+fi
 
 sudo apt-get install python3-pip virtualenv python3-dev python3-tk libfreetype6-dev \
     screen g++ unzip libsnappy-dev cmake -qq
 
-sudo apt-get install automake libtool make gcc pkg-config -qq
+sudo apt-get install automake libtool make gcc pkg-config git -qq
 
 #Needed for downloading jemalloc
 sudo apt-get install wget -qq
