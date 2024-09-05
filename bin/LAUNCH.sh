@@ -24,6 +24,8 @@ else
     exit 1
 fi
 
+export AIL_APP_SECRET_KEY="$(LC_ALL=C tr -dc A-Za-z0-9 </dev/urandom | head -c 200; echo)"
+
 export PATH=$AIL_VENV/bin:$PATH
 export PATH=$AIL_HOME:$PATH
 export PATH=$AIL_REDIS:$PATH
