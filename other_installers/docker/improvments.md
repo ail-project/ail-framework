@@ -34,6 +34,9 @@ the packages that it uses. Some packages are being called in the requiremtents.t
 but they are also being build in the `installing_deps.sh`. Is this really needed? 
 Can we just have the packages being called in the requirements.txt? Why are we 
 building the packages using apt?
+Here are some packages that are buing built using apt:
+    - [ ] faup
+    - [ ] tlsh
 
 - [ ] If all of these points are correct and are implemented, then it will be 
 needed to create a different way of building the project and the installation 
@@ -46,3 +49,7 @@ for docker and for bare metal installation.
 devcontainers so that we can really isolate the developing process. (If there's 
 more tools that could be implemented, fell free to add to the list)
     - [ ] Devcontainers
+
+- [ ] Undestand what each service of installing_deps.sh does. So that it can be 
+understood how the docker-compose.yaml file will be built.
+
