@@ -13,14 +13,13 @@ RUN apt-get install git python3-dev build-essential \
 
 # Adding sudo command
 RUN useradd -m docker && echo "docker:docker" | chpasswd && adduser docker sudo
+
 RUN echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
 
 # Installing AIL dependencies
-RUN mkdir /opt/AIL
-ADD . /opt/AIL
 WORKDIR /opt/AIL
+COPY . .
 RUN ./installing_deps.sh 
-WORKDIR /opt/AIL
 
 # Default to UTF-8 file.encoding
 ENV LANG C.UTF-8
@@ -34,7 +33,7 @@ ENV AIL_VENV ${AIL_HOME}/AILENV
 ENV PATH ${AIL_VENV}/bin:${AIL_HOME}:${AIL_REDIS}:${AIL_ARDB}:${AIL_BIN}:${AIL_FLASK}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN ./pystemon/install.sh
+
 RUN pip install -r /opt/pystemon/requirements.txt
 
-COPY docker_start.sh /docker_start.sh
 ENTRYPOINT ["/bin/bash", "docker_start.sh"]
