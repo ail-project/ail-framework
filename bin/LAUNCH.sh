@@ -32,7 +32,7 @@ export PATH=$AIL_BIN:$PATH
 export PATH=$AIL_FLASK:$PATH
 
 function check_screens {
-    isredis=`screen -ls | egrep '[0-9]+.Redis_AIL' | cut -d. -f1`
+    isvalkey=`screen -ls | egrep '[0-9]+.Valkey_AIL' | cut -d. -f1`
     isardb=`screen -ls | egrep '[0-9]+.ARDB_AIL' | cut -d. -f1`
     iskvrocks=`screen -ls | egrep '[0-9]+.KVROCKS_AIL' | cut -d. -f1`
     islogged=`screen -ls | egrep '[0-9]+.Logging_AIL' | cut -d. -f1`
@@ -60,7 +60,7 @@ function helptext {
     "$CYAN"
     - All the queuing modules.
     - All the processing modules.
-    - All Redis in memory servers.
+    - All Valkey in memory servers.
     - All KVROCKS servers.
     "$DEFAULT"
     (Inside screen Daemons)
@@ -82,17 +82,30 @@ function helptext {
     "
 }
 
-function launching_redis {
+#function launching_valkey {
+#    conf_dir="${AIL_HOME}/configs/"
+#
+#    screen -dmS "Valkey_AIL"
+#    sleep 0.1
+#    echo -e $GREEN"\t* Launching Valkey servers"$DEFAULT
+#    screen -S "Valkey_AIL" -X screen -t "6379" bash -c 'valkey-server '$conf_dir'6379.conf ; read x'
+#    sleep 0.1
+#    screen -S "Valkey_AIL" -X screen -t "6380" bash -c 'valkey-server '$conf_dir'6380.conf ; read x'
+#    sleep 0.1
+#    screen -S "Valkey_AIL" -X screen -t "6381" bash -c 'valkey-server '$conf_dir'6381.conf ; read x'
+#}
+
+function launching_valkey {
     conf_dir="${AIL_HOME}/configs/"
 
-    screen -dmS "Redis_AIL"
+    screen -dmS "Valkey_AIL"
     sleep 0.1
-    echo -e $GREEN"\t* Launching Redis servers"$DEFAULT
-    screen -S "Redis_AIL" -X screen -t "6379" bash -c 'redis-server '$conf_dir'6379.conf ; read x'
+    echo -e $GREEN"\t* Launching Valkey servers"$DEFAULT
+    screen -S "Valkey_AIL" -X screen -t "6379" bash -c 'valkey-server '$conf_dir'6379.conf ; read x'
     sleep 0.1
-    screen -S "Redis_AIL" -X screen -t "6380" bash -c 'redis-server '$conf_dir'6380.conf ; read x'
+    screen -S "Valkey_AIL" -X screen -t "6380" bash -c 'valkey-server '$conf_dir'6380.conf ; read x'
     sleep 0.1
-    screen -S "Redis_AIL" -X screen -t "6381" bash -c 'redis-server '$conf_dir'6381.conf ; read x'
+    screen -S "Valkey_AIL" -X screen -t "6381" bash -c 'valkey-server '$conf_dir'6381.conf ; read x'
 }
 
 function launching_ardb {
@@ -322,41 +335,41 @@ function launching_scripts {
 
 }
 
-function shutting_down_redis_servers {
+function shutting_down_valkey_servers {
     array=("$@")
-    redis_dir=${AIL_HOME}/redis/src
+    valkey_dir=${AIL_HOME}/valkey/src
     for port in "${array[@]}";
         do
-            bash -c "${redis_dir}/redis-cli -p ${port} -a ail SHUTDOWN"
+            bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail SHUTDOWN"
             sleep 0.1
         done
 }
 
-function shutting_down_redis {
+function shutting_down_valkey {
     ports=("6379" "6380" "6381")
-    shutting_down_redis_servers "${ports[@]}"
+    shutting_down_valkey_servers "${ports[@]}"
 }
 
 function shutting_down_ardb {
     ports=("6382")
-    shutting_down_redis_servers "${ports[@]}"
+    shutting_down_valkey_servers "${ports[@]}"
 }
 
 function shutting_down_kvrocks {
     ports=("6383")
-    shutting_down_redis_servers "${ports[@]}"
+    shutting_down_valkey_servers "${ports[@]}"
 }
 
-function checking_redis_servers {
+function checking_valkey_servers {
     db_name=$1
     shift
     array=("$@")
-    redis_dir="${AIL_HOME}/redis/src"
+    valkey_dir="${AIL_HOME}/valkey/src"
     flag_db=0
     for port in "${array[@]}";
         do
             sleep 0.2
-            bash -c "${redis_dir}/redis-cli -p ${port} -a ail PING | grep "PONG" &> /dev/null"
+            bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail PING | grep "PONG" &> /dev/null"
             if [ ! $? == 0 ]; then
                 echo -e "${RED}\t${port} ${db_name} not ready${DEFAULT}"
                 flag_db=1
@@ -365,34 +378,34 @@ function checking_redis_servers {
     return $flag_db;
 }
 
-function checking_redis {
+function checking_valkey {
     ports=("6379" "6380" "6381")
-    checking_redis_servers "Redis" "${ports[@]}"
+    checking_valkey_servers "Valkey" "${ports[@]}"
     return $?
 }
 
 function checking_ardb {
     ports=("6382")
-    checking_redis_servers "ARDB" "${ports[@]}"
+    checking_valkey_servers "ARDB" "${ports[@]}"
     return $?
 }
 
 function checking_kvrocks {
     ports=("6383")
-    checking_redis_servers "KVROCKS" "${ports[@]}"
+    checking_valkey_servers "KVROCKS" "${ports[@]}"
     return $?
 }
 
-function wait_until_redis_is_ready {
-    redis_not_ready=true
-    while $redis_not_ready; do
-        if checking_redis; then
-            redis_not_ready=false;
+function wait_until_valkey_is_ready {
+    valkey_not_ready=true
+    while $valkey_not_ready; do
+        if checking_valkey; then
+            valkey_not_ready=false;
         else
             sleep 1
         fi
     done
-    echo -e $YELLOW"\t* Redis Launched"$DEFAULT
+    echo -e $YELLOW"\t* Valkey Launched"$DEFAULT
 }
 
 function wait_until_ardb_is_ready {
@@ -419,9 +432,9 @@ function wait_until_kvrocks_is_ready {
     echo -e $YELLOW"\t* KVROCKS Launched"$DEFAULT
 }
 
-function launch_redis {
-    if [[ ! $isredis ]]; then
-        launching_redis;
+function launch_valkey {
+    if [[ ! $isvalkey ]]; then
+        launching_valkey;
     else
         echo -e $RED"\t* A screen is already launched"$DEFAULT
     fi
@@ -454,14 +467,14 @@ function launch_logs {
 function launch_scripts {
     if [[ ! $isscripted ]]; then ############################# is core
       sleep 1
-        if checking_redis && checking_kvrocks; then
+        if checking_valkey && checking_kvrocks; then
             launching_scripts;
         else
             no_script_launched=true
             while $no_script_launched; do
                 echo -e $YELLOW"\tScript not started, waiting 5 more secondes"$DEFAULT
                 sleep 5
-                if checking_redis && checking_kvrocks; then
+                if checking_valkey && checking_kvrocks; then
                     launching_scripts;
                     no_script_launched=false
                 else
@@ -512,10 +525,10 @@ function killscript {
 }
 
 function killall {
-    if [[ $isredis || $isardb || $iskvrocks || $islogged || $is_ail_2_ail || $isscripted || $isflasked || $isfeeded || $is_ail_core || $is_ail_2_ail ]]; then
-        if [[ $isredis ]]; then
-            echo -e $GREEN"Gracefully closing redis servers"$DEFAULT
-            shutting_down_redis;
+    if [[ $isvalkey || $isardb || $iskvrocks || $islogged || $is_ail_2_ail || $isscripted || $isflasked || $isfeeded || $is_ail_core || $is_ail_2_ail ]]; then
+        if [[ $isvalkey ]]; then
+            echo -e $GREEN"Gracefully closing valkey servers"$DEFAULT
+            shutting_down_valkey;
             sleep 0.2
         fi
         if [[ $isardb ]]; then
@@ -527,17 +540,17 @@ function killall {
             shutting_down_kvrocks;
         fi
         echo -e $GREEN"Killing all"$DEFAULT
-        kill $isredis $isardb $iskvrocks $islogged $is_ail_core $isscripted $isflasked $isfeeded $is_ail_2_ail
+        kill $isvalkey $isardb $iskvrocks $islogged $is_ail_core $isscripted $isflasked $isfeeded $is_ail_2_ail
         sleep 0.2
         echo -e $ROSE`screen -ls`$DEFAULT
-        echo -e $GREEN"\t* $isredis $isardb $iskvrocks $islogged $isscripted $is_ail_2_ail $isflasked $isfeeded $is_ail_core killed."$DEFAULT
+        echo -e $GREEN"\t* $isvalkey $isardb $iskvrocks $islogged $isscripted $is_ail_2_ail $isflasked $isfeeded $is_ail_core killed."$DEFAULT
     else
         echo -e $RED"\t* No screen to kill"$DEFAULT
     fi
 }
 
 function _set_kvrocks_namespace() {
-  bash -c "${redis_dir}/redis-cli -p ${port} -a ail namespace add $1 $2"
+  bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail namespace add $1 $2"
 }
 
 function set_kvrocks_namespaces() {
@@ -590,7 +603,7 @@ function launch_tests() {
   echo -e ""
   echo -e $GREEN"AIL SCREENS:"$DEFAULT
   echo -e $ROSE`screen -ls`$DEFAULT
-  echo -e $GREEN"\t* Redis:   $isredis"$DEFAULT
+  echo -e $GREEN"\t* Valkey:   $isvalkey"$DEFAULT
   echo -e $GREEN"\t* Kvrocks: $iskvrocks $isscripted $isflasked"$DEFAULT
   echo -e $GREEN"\t* Modules: $isscripted"$DEFAULT
   echo -e $GREEN"\t* Flask:   $isflasked"$DEFAULT
@@ -601,11 +614,11 @@ function launch_tests() {
 
 function reset_password() {
   echo -e "\t* Resetting UI admin password..."
-  if checking_kvrocks && checking_redis; then
+  if checking_kvrocks && checking_valkey; then
       python ${AIL_HOME}/var/www/create_default_user.py &
       wait
   else
-      echo -e $RED"\t* Error: Please launch all Redis and ARDB servers"$DEFAULT
+      echo -e $RED"\t* Error: Please launch all Valkey and ARDB servers"$DEFAULT
       exit
   fi
 }
@@ -613,7 +626,7 @@ function reset_password() {
 function launch_all {
     checking_configuration;
     update;
-    launch_redis;
+    launch_valkey;
     launch_kvrocks;
     launch_scripts;
     launch_flask;
@@ -621,7 +634,7 @@ function launch_all {
 
 function menu_display {
 
-  options=("Redis" "Kvrocks" "Scripts" "Flask" "Killall" "Update" "Update-config" "Update-thirdparty")
+  options=("Valkey" "Kvrocks" "Scripts" "Flask" "Killall" "Update" "Update-config" "Update-thirdparty")
 
   menu() {
       echo "What do you want to Launch?:"
@@ -646,8 +659,8 @@ function menu_display {
   for i in ${!options[@]}; do
       if [[ "${choices[i]}" ]]; then
           case ${options[i]} in
-              Redis)
-                  launch_redis;
+              Valkey)
+                  launch_valkey;
                   ;;
               Kvrocks)
                   launch_kvrocks;
@@ -693,16 +706,16 @@ while [ "$1" != "" ]; do
         -l | --launchAuto )             check_screens;
                                         launch_all "automatic";
                                         ;;
-        -lr | --launchRedis )           check_screens;
-                                        launch_redis;
+        -lr | --launchValkey )           check_screens;
+                                        launch_valkey;
                                         ;;
         -la | --launchARDB )            launch_ardb;
                                         ;;
         -lk | --launchKVROCKS )         check_screens;
                                         launch_kvrocks;
                                         ;;
-        -lrv | --launchRedisVerify )    launch_redis;
-                                        wait_until_redis_is_ready;
+        -lrv | --launchValkeyVerify )    launch_valkey;
+                                        wait_until_valkey_is_ready;
                                         ;;
         -lkv | --launchKVORCKSVerify )  launch_kvrocks;
                                         wait_until_kvrocks_is_ready;
