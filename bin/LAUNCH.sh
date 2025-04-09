@@ -82,30 +82,17 @@ function helptext {
     "
 }
 
-#function launching_valkey {
-#    conf_dir="${AIL_HOME}/configs/"
-#
-#    screen -dmS "Valkey_AIL"
-#    sleep 0.1
-#    echo -e $GREEN"\t* Launching Valkey servers"$DEFAULT
-#    screen -S "Valkey_AIL" -X screen -t "6379" bash -c 'valkey-server '$conf_dir'6379.conf ; read x'
-#    sleep 0.1
-#    screen -S "Valkey_AIL" -X screen -t "6380" bash -c 'valkey-server '$conf_dir'6380.conf ; read x'
-#    sleep 0.1
-#    screen -S "Valkey_AIL" -X screen -t "6381" bash -c 'valkey-server '$conf_dir'6381.conf ; read x'
-#}
-
 function launching_valkey {
     conf_dir="${AIL_HOME}/configs/"
 
     screen -dmS "Valkey_AIL"
     sleep 0.1
     echo -e $GREEN"\t* Launching Valkey servers"$DEFAULT
-    screen -S "Valkey_AIL" -X screen -t "6379" bash -c 'valkey-server '$conf_dir'6379.conf ; read x'
+    screen -S "Valkey_AIL" -X screen -t "6379" bash -c '${AIL_VALKEY}/valkey-server '$conf_dir'6379.conf ; read x'
     sleep 0.1
-    screen -S "Valkey_AIL" -X screen -t "6380" bash -c 'valkey-server '$conf_dir'6380.conf ; read x'
+    screen -S "Valkey_AIL" -X screen -t "6380" bash -c '${AIL_VALKEY}/valkey-server '$conf_dir'6380.conf ; read x'
     sleep 0.1
-    screen -S "Valkey_AIL" -X screen -t "6381" bash -c 'valkey-server '$conf_dir'6381.conf ; read x'
+    screen -S "Valkey_AIL" -X screen -t "6381" bash -c '${AIL_VALKEY}/valkey-server '$conf_dir'6381.conf ; read x'
 }
 
 function launching_ardb {
@@ -340,7 +327,7 @@ function shutting_down_valkey_servers {
     valkey_dir=${AIL_HOME}/valkey/src
     for port in "${array[@]}";
         do
-            bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail SHUTDOWN"
+            bash -c "${valkey_dir}/valkey-cli -p ${port} SHUTDOWN"
             sleep 0.1
         done
 }
@@ -369,7 +356,7 @@ function checking_valkey_servers {
     for port in "${array[@]}";
         do
             sleep 0.2
-            bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail PING | grep "PONG" &> /dev/null"
+            bash -c "${valkey_dir}/valkey-cli -p ${port} PING | grep "PONG" &> /dev/null"
             if [ ! $? == 0 ]; then
                 echo -e "${RED}\t${port} ${db_name} not ready${DEFAULT}"
                 flag_db=1
@@ -550,7 +537,7 @@ function killall {
 }
 
 function _set_kvrocks_namespace() {
-  bash -c "${valkey_dir}/valkey-cli -p ${port} -a ail namespace add $1 $2"
+  bash -c "${valkey_dir}/valkey-cli -p ${port} namespace add $1 $2"
 }
 
 function set_kvrocks_namespaces() {
