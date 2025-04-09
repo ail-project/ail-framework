@@ -100,6 +100,8 @@ https://github.com/saffsd/langid.py/archive/master.zip
 
 requests
 
+#Openai
+openai
 
 ##### Old packages
 # texttable
