@@ -8,6 +8,7 @@
 # Install Dirs
 AILENV
 redis
+valkey
 ardb
 kvrocks
 DATA_KVROCKS

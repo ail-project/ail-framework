@@ -45,10 +45,9 @@ sudo apt-get install p7zip-full -qq # TODO REMOVE ME
 # SUBMODULES #
 git submodule update --init
 
-# REDIS #
-test ! -d redis/ && git clone https://github.com/redis/redis.git
-pushd redis/
-git checkout 5.0
+# VALKEY #
+test ! -d valkey && git clone https://github.com/valkey-io/valkey
+pushd valkey
 make
 popd
 
@@ -91,9 +90,6 @@ popd
 DEFAULT_HOME=$(pwd)
 
 #### KVROCKS ####
-# If we are on debian, we can get the kvrocks deb package:
-#   download the right version from https://github.com/RocksLabs/kvrocks-fpm/releases
-#   then sudo dpkg -i kvrocks_2.11.1-1_amd64.deb   (change the version number to yours)
 test ! -d kvrocks/ && git clone https://github.com/apache/incubator-kvrocks.git kvrocks
 pushd kvrocks
 ./x.py build -j 4
