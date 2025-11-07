@@ -9,6 +9,9 @@ WHITE="\\033[0;02m"
 YELLOW="\\033[1;33m"
 CYAN="\\033[1;36m"
 
+LAUNCH_REDIS=true
+LAUNCH_KVROCKS=true
+
 # Getting CWD where bash script resides
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd |sed 's/bin//' )"
 export AIL_HOME="${DIR}"
@@ -78,7 +81,12 @@ function helptext {
       [-rp | --resetPassword]      Reset Password
       [-f  | --launchFeeder]       LAUNCH Pystemon feeder
       [-m  | --menu]               Display Advanced Menu
+      [--no-redis]                 Do not launch local Redis server
+      [--no-kvrocks]               Do not launch local Kvrocks server
       [-h  | --help]               Help
+
+    Note: Modifier flags like --no-redis must be specified before action flags like -l or -r.
+    Example: LAUNCH.sh --no-redis --no-kvrocks -l
     "
 }
 
@@ -624,8 +632,12 @@ function reset_password() {
 function launch_all {
     checking_configuration;
     update;
-    launch_redis;
-    launch_kvrocks;
+    if [ "$LAUNCH_REDIS" = true ]; then
+        launch_redis;
+    fi
+    if [ "$LAUNCH_KVROCKS" = true ]; then
+        launch_kvrocks;
+    fi
     launch_scripts;
     launch_flask;
 }
@@ -701,6 +713,10 @@ function menu_display {
 check_screens;
 while [ "$1" != "" ]; do
     case $1 in
+        --no-redis )                    LAUNCH_REDIS=false
+                                        ;;
+        --no-kvrocks )                  LAUNCH_KVROCKS=false
+                                        ;;
         -l | --launchAuto )             check_screens;
                                         launch_all "automatic";
                                         ;;
