@@ -9,8 +9,8 @@ WHITE="\\033[0;02m"
 YELLOW="\\033[1;33m"
 CYAN="\\033[1;36m"
 
-LAUNCH_REDIS=true
-LAUNCH_KVROCKS=true
+#SKIP_LAUNCH_REDIS=true
+#SKIP_LAUNCH_KVROCKS=true
 
 # Getting CWD where bash script resides
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd |sed 's/bin//' )"
@@ -81,12 +81,7 @@ function helptext {
       [-rp | --resetPassword]      Reset Password
       [-f  | --launchFeeder]       LAUNCH Pystemon feeder
       [-m  | --menu]               Display Advanced Menu
-      [--no-redis]                 Do not launch local Redis server
-      [--no-kvrocks]               Do not launch local Kvrocks server
       [-h  | --help]               Help
-
-    Note: Modifier flags like --no-redis must be specified before action flags like -l or -r.
-    Example: LAUNCH.sh --no-redis --no-kvrocks -l
     "
 }
 
@@ -384,6 +379,9 @@ function checking_redis_servers {
 }
 
 function checking_redis {
+    if [ "$SKIP_LAUNCH_REDIS" = true ]; then
+        return 0
+    fi
     ports=("6379" "6380" "6381")
     checking_redis_servers "Redis" "${ports[@]}"
     return $?
@@ -396,6 +394,9 @@ function checking_ardb {
 }
 
 function checking_kvrocks {
+    if [ "$SKIP_LAUNCH_KVROCKS" = true ]; then
+        return 0
+    fi
     ports=("6383")
     checking_redis_servers "KVROCKS" "${ports[@]}"
     return $?
@@ -632,10 +633,10 @@ function reset_password() {
 function launch_all {
     checking_configuration;
     update;
-    if [ "$LAUNCH_REDIS" = true ]; then
+    if [ "$SKIP_LAUNCH_REDIS" != true ]; then
         launch_redis;
     fi
-    if [ "$LAUNCH_KVROCKS" = true ]; then
+    if [ "$SKIP_LAUNCH_KVROCKS" != true ]; then
         launch_kvrocks;
     fi
     launch_scripts;
@@ -713,10 +714,6 @@ function menu_display {
 check_screens;
 while [ "$1" != "" ]; do
     case $1 in
-        --no-redis )                    LAUNCH_REDIS=false
-                                        ;;
-        --no-kvrocks )                  LAUNCH_KVROCKS=false
-                                        ;;
         -l | --launchAuto )             check_screens;
                                         launch_all "automatic";
                                         ;;
