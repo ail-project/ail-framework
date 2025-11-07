@@ -9,8 +9,10 @@ WHITE="\\033[0;02m"
 YELLOW="\\033[1;33m"
 CYAN="\\033[1;36m"
 
-#SKIP_LAUNCH_REDIS=true
-#SKIP_LAUNCH_KVROCKS=true
+# SKIP_LAUNCH_REDIS=true
+# SKIP_LAUNCH_KVROCKS=true
+# SKIP_CHECK_KVROCKS=true
+# SKIP_CHECK_REDIS=true
 
 # Getting CWD where bash script resides
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd |sed 's/bin//' )"
@@ -379,7 +381,8 @@ function checking_redis_servers {
 }
 
 function checking_redis {
-    if [ "$SKIP_LAUNCH_REDIS" = true ]; then
+    if [ "$SKIP_CHECK_REDIS" = "true" ]; then
+        echo -e $YELLOW"\t* Skipping Redis check"$DEFAULT
         return 0
     fi
     ports=("6379" "6380" "6381")
@@ -394,7 +397,8 @@ function checking_ardb {
 }
 
 function checking_kvrocks {
-    if [ "$SKIP_LAUNCH_KVROCKS" = true ]; then
+    if [ "$SKIP_CHECK_KVROCKS" = "true" ]; then
+        echo -e $YELLOW"\t* Skipping KVROCKS check"$DEFAULT
         return 0
     fi
     ports=("6383")
