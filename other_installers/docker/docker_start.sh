@@ -12,7 +12,8 @@ signalListener() {
 
 source ./AILENV/bin/activate
 cd bin
-./LAUNCH.sh -l
+# ./LAUNCH.sh -l
+./LAUNCH.sh --no-redis --no-kvrocks -l
 ./LAUNCH.sh -c
 ./LAUNCH.sh -f
 
