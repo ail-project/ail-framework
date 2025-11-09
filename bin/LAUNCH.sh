@@ -9,6 +9,11 @@ WHITE="\\033[0;02m"
 YELLOW="\\033[1;33m"
 CYAN="\\033[1;36m"
 
+# SKIP_LAUNCH_REDIS=true
+# SKIP_LAUNCH_KVROCKS=true
+# SKIP_CHECK_KVROCKS=true
+# SKIP_CHECK_REDIS=true
+
 # Getting CWD where bash script resides
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd |sed 's/bin//' )"
 export AIL_HOME="${DIR}"
@@ -376,6 +381,10 @@ function checking_redis_servers {
 }
 
 function checking_redis {
+    if [ "$SKIP_CHECK_REDIS" = "true" ]; then
+        echo -e $YELLOW"\t* Skipping Redis check"$DEFAULT
+        return 0
+    fi
     ports=("6379" "6380" "6381")
     checking_redis_servers "Redis" "${ports[@]}"
     return $?
@@ -388,6 +397,10 @@ function checking_ardb {
 }
 
 function checking_kvrocks {
+    if [ "$SKIP_CHECK_KVROCKS" = "true" ]; then
+        echo -e $YELLOW"\t* Skipping KVROCKS check"$DEFAULT
+        return 0
+    fi
     ports=("6383")
     checking_redis_servers "KVROCKS" "${ports[@]}"
     return $?
@@ -624,8 +637,12 @@ function reset_password() {
 function launch_all {
     checking_configuration;
     update;
-    launch_redis;
-    launch_kvrocks;
+    if [ "$SKIP_LAUNCH_REDIS" != true ]; then
+        launch_redis;
+    fi
+    if [ "$SKIP_LAUNCH_KVROCKS" != true ]; then
+        launch_kvrocks;
+    fi
     launch_scripts;
     launch_flask;
 }
