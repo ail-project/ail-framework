@@ -45,10 +45,9 @@ sudo apt-get install p7zip-full -qq # TODO REMOVE ME
 # SUBMODULES #
 git submodule update --init --recursive
 
-# REDIS #
-test ! -d redis/ && git clone https://github.com/redis/redis.git
-pushd redis/
-git checkout 5.0
+# VALKEY #
+test ! -d valkey && git clone https://github.com/valkey-io/valkey
+pushd valkey
 make
 popd
 
