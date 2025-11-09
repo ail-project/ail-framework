@@ -18,6 +18,7 @@
   <script src="{{ url_for('static', filename='js/jquery.dataTables.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js') }}"></script>
   <script src="{{ url_for('static', filename='js/tags.js') }}"></script>
+  <script src="{{ url_for('static', filename='js/helper.js') }}"></script>
 
   <style>
     .popover{
@@ -433,6 +434,11 @@
                 </tbody>
               </table>
             </div>
+
+              {% with ollama_description=meta['description'], image_gid=meta['image_gid'] %}
+                {% include 'block_img_ollama.html' %}
+              {% endwith %}
+
           </div>
 
           <div class="col-md-7">

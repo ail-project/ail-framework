@@ -26,7 +26,7 @@ from lib import Duplicate
 from lib.correlations_engine import get_nb_correlations, get_correlations, add_obj_correlation, delete_obj_correlation, delete_obj_correlations, exists_obj_correlation, is_obj_correlated, get_nb_correlation_by_correl_type, get_obj_inter_correlation
 from lib.Investigations import is_object_investigated, get_obj_investigations, delete_obj_investigations
 from lib.relationships_engine import get_obj_nb_relationships, get_obj_relationships, add_obj_relationship
-from lib.Language import get_obj_languages, add_obj_language, remove_obj_language, detect_obj_language, get_obj_language_stats, get_obj_translation, set_obj_translation, delete_obj_translation, get_obj_main_language
+from lib.Language import get_obj_languages, add_obj_language, remove_obj_language, detect_obj_language, get_obj_language_stats, get_obj_translation, set_obj_translation, delete_obj_translation, get_obj_main_language, delete_obj_language, get_container_language_objs
 from lib.Tracker import is_obj_tracked, get_obj_trackers, delete_obj_trackers
 
 logging.config.dictConfig(ail_logger.get_config(name='ail'))
@@ -68,6 +68,11 @@ class AbstractObject(ABC):
     def get_global_id(self):
         return f'{self.get_type()}:{self.get_subtype(r_str=True)}:{self.get_id()}'
 
+    def get_uuid5(self, global_id=None):
+        if not global_id:
+            global_id = self.get_global_id()
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, global_id))
+
     def get_last_full_date(self):
         return None
 
@@ -83,6 +88,18 @@ class AbstractObject(ABC):
             dict_meta['uuid'] = str(uuid.uuid5(uuid.NAMESPACE_URL, self.get_id()))
         return dict_meta
 
+    def _get_obj_field(self, obj_type, subtype, obj_id, field):
+        if subtype is None:
+            return r_object.hget(f'meta:{obj_type}:{obj_id}', field)
+        else:
+            return r_object.hget(f'meta:{obj_type}:{subtype}:{obj_id}', field)
+
+    def _exists_field(self, field):
+        if self.subtype is None:
+            return r_object.hexists(f'meta:{self.type}:{self.id}', field)
+        else:
+            return r_object.hexists(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', field)
+
     def _get_field(self, field):
         if self.subtype is None:
             return r_object.hget(f'meta:{self.type}:{self.id}', field)
@@ -94,6 +111,18 @@ class AbstractObject(ABC):
             return r_object.hset(f'meta:{self.type}:{self.id}', field, value)
         else:
             return r_object.hset(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', field, value)
+
+    def _get_fields_keys(self):
+        if self.subtype is None:
+            return r_object.hkeys(f'meta:{self.type}:{self.id}')
+        else:
+            return r_object.hkeys(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}')
+
+    def _delete_field(self, field):
+        if self.subtype is None:
+            return r_object.hdel(f'meta:{self.type}:{self.id}', field)
+        else:
+            return r_object.hdel(f'meta:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', field)
 
     ## Queues ##
 
@@ -344,11 +373,17 @@ class AbstractObject(ABC):
     def get_languages(self):
         return get_obj_languages(self.type, self.get_subtype(r_str=True), self.id)
 
+    def get_language_objs(self, language):
+        return get_container_language_objs(language, self.get_global_id())
+
     def add_language(self, language):
         return add_obj_language(language, self.type, self.get_subtype(r_str=True), self.id, objs_containers=self.get_objs_container())
 
     def remove_language(self, language):
         return remove_obj_language(language, self.type, self.get_subtype(r_str=True), self.id, objs_containers=self.get_objs_container())
+
+    def delete_languages(self):
+        delete_obj_language(self.type, self.get_subtype(r_str=True), self.id, objs_containers=self.get_objs_container())
 
     def edit_language(self, old_language, new_language):
         if old_language:

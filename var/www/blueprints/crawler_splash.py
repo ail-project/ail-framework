@@ -31,6 +31,8 @@ from lib.objects import Domains
 from lib.objects.Items import Item
 from lib.objects.Titles import Title
 from lib import Tag
+from lib import search_engine
+from lib import images_engine
 
 from packages import Date
 
@@ -404,7 +406,7 @@ def showDomain():
     if not domain.exists():
         abort(404)
 
-    dict_domain = domain.get_meta(options=['last_origin', 'languages'])
+    dict_domain = domain.get_meta(options={'description', 'last_origin', 'languages'})
     dict_domain['domain'] = domain.id
     if domain.was_up():
         dict_domain = {**dict_domain, **domain.get_correlations(filter_types=['cryptocurrency', 'decoded', 'pgp', 'screenshot', 'title'], unpack=True)}
@@ -452,6 +454,7 @@ def showDomain():
 
     return render_template("showDomain.html",
                            dict_domain=dict_domain, bootstrap_label=bootstrap_label,
+                           ollama_enabled=images_engine.is_ollama_enabled(),
                            modal_add_tags=Tag.get_modal_add_tags(dict_domain['domain'], object_type="domain"))
 
 
@@ -596,6 +599,7 @@ def domains_search_languages_get():
 @login_required
 @login_user
 def domains_search_name():
+    user_id = current_user.get_user_id()
     name = request.args.get('name')
     page = request.args.get('page')
     try:
@@ -621,6 +625,7 @@ def domains_search_name():
         else:
             send_to_crawler = False
 
+    search_engine.log(user_id, 'domain_name', name)
     l_dict_domains = Domains.api_search_domains_by_name(name, domains_types, meta=True, page=page)
     return render_template("domains/domains_result_list.html", template_folder='../../',
                            l_dict_domains=l_dict_domains, bootstrap_label=bootstrap_label,

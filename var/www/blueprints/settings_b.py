@@ -9,7 +9,7 @@ import os
 import sys
 import json
 
-from flask import Flask, render_template, jsonify, request, Blueprint, redirect, url_for, Response, abort, send_file
+from flask import Flask, render_template, jsonify, request, Blueprint, redirect, url_for, Response, abort
 from flask_login import login_required, current_user
 
 # Import Role_Manager
@@ -25,6 +25,8 @@ from lib import ail_config
 from lib import ail_queues
 from lib import ail_users
 from lib import d4
+from lib import passivedns
+from lib.objects import SSHKeys
 from packages import git_status
 
 # ============ BLUEPRINT ============
@@ -318,6 +320,13 @@ def create_user_post():
     password1 = request.form.get('password1')
     password2 = request.form.get('password2')
     enable_2_fa = request.form.get('enable_2_fa')
+    send_email = request.form.get('send_email')
+
+    if send_email:
+        send_email = True
+    else:
+        send_email = False
+
     if enable_2_fa or ail_users.is_2fa_enabled():
         enable_2_fa = True
     else:
@@ -353,7 +362,7 @@ def create_user_post():
                     edit = True
                 else:
                     edit = False
-                r = ail_users.api_create_user(admin_id, request.access_route[0], request.user_agent, email, password, org_uuid, role, enable_2_fa)
+                r = ail_users.api_create_user(admin_id, request.access_route[0], request.user_agent, email, password, org_uuid, role, enable_2_fa, send_email=send_email)
                 if r[1] != 200:
                     return create_json_response(r[0], r[1])
 
@@ -361,7 +370,7 @@ def create_user_post():
                 # qr_code = ail_users.create_qr_code(f'{email} - {password}')
                 return render_template("create_user.html", new_user=new_user, meta={},
                                        all_roles=all_roles, acl_admin=True)
-
+            return None
         else:
             return render_template("create_user.html", all_roles=all_roles, meta={}, acl_admin=True)
     else:
@@ -456,8 +465,10 @@ def delete_org():
 @login_required
 @login_read_only
 def passive_dns():
+    acl_admin = current_user.is_in_role('admin')
+    meta = passivedns.get_passive_dns_meta()
     passivedns_enabled = d4.is_passive_dns_enabled()
-    return render_template("passive_dns.html", passivedns_enabled=passivedns_enabled)
+    return render_template("passive_dns.html", passivedns_enabled=passivedns_enabled, meta=meta, acl_admin=acl_admin)
 
 
 @settings_b.route("/settings/passivedns/change_state", methods=['GET'])
@@ -467,6 +478,87 @@ def passive_dns_change_state():
     new_state = request.args.get('state') == 'enable'
     passivedns_enabled = d4.change_passive_dns_state(new_state)
     return redirect(url_for('settings_b.passive_dns'))
+
+@settings_b.route("/settings/passivedns/enable", methods=['GET'])
+@login_required
+@login_admin
+def passive_dns_enable():
+    passivedns.enable_passive_dns()
+    return redirect(url_for('settings_b.passive_dns'))
+
+@settings_b.route("/settings/passivedns/disable", methods=['GET'])
+@login_required
+@login_admin
+def passive_dns_disable():
+    passivedns.disable_passive_dns()
+    return redirect(url_for('settings_b.passive_dns'))
+
+@settings_b.route("/settings/passivedns/edit", methods=['GET', 'POST'])
+@login_required
+@login_admin
+def passive_dns_edit():
+    if request.method == 'POST':
+        user = request.form.get('user')
+        password = request.form.get('password')
+        res = passivedns.api_edit_passive_dns(user, password)
+        if res[1] != 200:
+            return create_json_response(r[0], r[1])
+        else:
+            return redirect(url_for('settings_b.passive_dns'))
+    else:
+        meta = passivedns.get_passive_dns_meta()
+        acl_admin = current_user.is_in_role('admin')
+        return render_template("passive_dns_edit.html", meta=meta, acl_admin=acl_admin)
+
+@settings_b.route("/settings/passivessh", methods=['GET'])
+@login_required
+@login_read_only
+def passive_ssh():
+    acl_admin = current_user.is_in_role('admin')
+    meta = SSHKeys.get_passive_ssh_meta()
+    return render_template("passive_ssh.html", meta=meta, acl_admin=acl_admin)
+
+@settings_b.route("/settings/passivedns/enable", methods=['GET'])
+@login_required
+@login_admin
+def passive_ssh_enable():
+    SSHKeys.enable_passive_ssh()
+    return redirect(url_for('settings_b.passive_ssh'))
+
+@settings_b.route("/settings/passivedns/disable", methods=['GET'])
+@login_required
+@login_admin
+def passive_ssh_disable():
+    SSHKeys.disable_passive_ssh()
+    return redirect(url_for('settings_b.passive_ssh'))
+
+@settings_b.route("/settings/passivedns/edit", methods=['GET', 'POST'])
+@login_required
+@login_admin
+def passive_ssh_edit():
+    if request.method == 'POST':
+        url = request.form.get('url')
+        user = request.form.get('user')
+        password = request.form.get('password')
+        res = SSHKeys.api_edit_passive_ssh(url, user, password)
+        if res[1] != 200:
+            return create_json_response(r[0], r[1])
+        else:
+            return redirect(url_for('settings_b.passive_ssh'))
+    else:
+        meta = SSHKeys.get_passive_ssh_meta()
+        acl_admin = current_user.is_in_role('admin')
+        return render_template("passive_ssh_edit.html", meta=meta, acl_admin=acl_admin)
+
+@settings_b.route("/settings/passivedns/test", methods=['GET'])
+@login_required
+@login_admin
+def passive_ssh_test():
+    res = SSHKeys.api_test_passive_ssh()
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    else:
+        return redirect(url_for('settings_b.passive_ssh'))
 
 # @settings.route("/settings/ail", methods=['GET'])
 # @login_required

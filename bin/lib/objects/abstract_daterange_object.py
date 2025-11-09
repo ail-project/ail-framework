@@ -178,9 +178,13 @@ class AbstractDaterangeObject(AbstractObject, ABC):
             self.set_last_seen(last_seen)
         r_object.sadd(f'{self.type}:all', self.id)
 
-    # TODO
-    def _delete(self):
-        pass
+    def delete_dates(self):
+        first_seen = r_object.hget(f'meta:{self.type}:{self.id}', 'first_seen')
+        last_seen = r_object.hget(f'meta:{self.type}:{self.id}', 'last_seen')
+        if first_seen and last_seen:
+            for date in Date.get_daterange(first_seen, last_seen):
+                r_object.zrem(f'{self.type}:date:{date}', self.id)
+        r_object.delete(f'meta:{self.type}:{self.id}')
 
 
 class AbstractDaterangeObjects(ABC):
@@ -218,6 +222,9 @@ class AbstractDaterangeObjects(ABC):
     def get_iterator(self):
         for obj_id in self.get_ids():
             yield self.obj_class(obj_id)
+
+    def get_nb(self):
+        return r_object.scard(f'{self.type}:all')
 
     ################################################
     ################################################
@@ -269,6 +276,8 @@ class AbstractDaterangeObjects(ABC):
         return objs
 
     def sanitize_content_to_search(self, content_to_search):
+        content_to_search = content_to_search.replace('\\', '\\\\').replace('.', '\\.').replace('{', '').replace('}', '').replace('(', '').replace(')', '')
+        content_to_search = content_to_search.replace('|', '\\|').replace('?', '\\?').replace('*', '\\*').replace('+', '\\+').replace('^', '\\^').replace('&', '\\&')
         return content_to_search
 
     def get_contents_ids(self):
@@ -282,28 +291,54 @@ class AbstractDaterangeObjects(ABC):
                 titles[content].append(domain[1:])
         return titles
 
-    def search_by_content(self, content_to_search, r_pos=False, case_sensitive=True):
+    def search_by_content(self, content_to_search, r_pos=False, case_sensitive=True, regex=True):
         objs = {}
-        if case_sensitive:
-            flags = 0
-        else:
-            flags = re.IGNORECASE
-        # for subtype in subtypes:
-        r_search = self.sanitize_content_to_search(content_to_search)
-        if not r_search or isinstance(r_search, dict):
+        to_search = self.sanitize_content_to_search(content_to_search)
+        if not to_search or isinstance(to_search, dict):
             return objs
-        r_search = re.compile(r_search, flags=flags)
-        for obj_id in self.get_ids():  # TODO REPLACE ME WITH AN ITERATOR
-            obj = self.obj_class(obj_id)
-            content = obj.get_content()
-            res = re.search(r_search, content)
-            if res:
-                objs[obj_id] = {}
-                if r_pos:  # TODO ADD CONTENT ????
-                    objs[obj_id]['hl-start'] = res.start()
-                    objs[obj_id]['hl-end'] = res.end()
-                    objs[obj_id]['content'] = content
+        if regex:
+            if case_sensitive:
+                flags = 0
+            else:
+                flags = re.IGNORECASE
+            to_search = re.compile(to_search, flags=flags)
+            for obj_id in self.get_ids():  # TODO REPLACE ME WITH AN ITERATOR
+                obj = self.obj_class(obj_id)
+                content = obj.get_content()
+                if not content:
+                    continue
+                else:
+                    content = str(content)
+
+                res = re.search(to_search, content)
+                if res:
+                    objs[obj_id] = {}
+                    if r_pos:  # TODO ADD CONTENT ????
+                        objs[obj_id]['hl-start'] = res.start()
+                        objs[obj_id]['hl-end'] = res.end()
+                        objs[obj_id]['content'] = content
+        else:
+            re_search = re.compile(to_search, flags=re.IGNORECASE)
+            for obj in self.get_iterator():
+                content = obj.get_content()
+                if not content:
+                    continue
+                else:
+                    content = str(content)
+                if to_search in content:
+                    res = re.search(re_search, content)
+                    if res:
+                        obj_id = obj.get_id()
+                        objs[obj_id] = {}
+                        if r_pos:
+                            objs[obj_id]['hl-start'] = res.start()
+                            objs[obj_id]['hl-end'] = res.end()
+                            objs[obj_id]['content'] = content
         return objs
+
+    def _fix_delete_objs_field(self, field_name):
+        for obj in self.get_iterator():
+            obj._delete_field(field_name)
 
     def api_get_chart_nb_by_daterange(self, date_from, date_to):
         date_type = []

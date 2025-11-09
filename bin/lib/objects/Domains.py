@@ -20,7 +20,7 @@ sys.path.append(os.environ['AIL_BIN'])
 from lib import ConfigLoader
 from lib.objects.abstract_object import AbstractObject
 
-from lib.ail_core import paginate_iterator
+from lib.ail_core import paginate_iterator, get_default_image_description_model
 from lib.item_basic import get_item_children, get_item_date, get_item_url, get_item_domain, get_item_har
 from lib.data_retention_engine import update_obj_date
 
@@ -229,6 +229,8 @@ class Domain(AbstractObject):
                 'tags': self.get_tags(r_list=True),
                 'status': self.is_up()
                 }
+        if 'description' in options:
+            meta['description'] = self.get_description()
         if 'last_origin' in options:
             meta['last_origin'] = self.get_last_origin(obj=True)
         if 'languages' in options:
@@ -315,6 +317,37 @@ class Domain(AbstractObject):
         else:
             return []
 
+    def get_crawled_images_by_epoch(self, epoch=None):
+        images = set()
+        for item_id in self.get_crawled_items_by_epoch(epoch):
+            screenshot = self.get_obj_correlations('item', '', item_id, ['screenshot']).get('screenshot')
+            if screenshot:
+                images.add(screenshot.pop()[1:])
+
+        return images
+
+    ## Descriptions ##
+
+    def get_description_models(self):
+        models = []
+        for key in self._get_fields_keys():
+            if key.startswith('desc:'):
+                model = key[5:]
+                models.append(model)
+
+    def add_description_model(self, model, description):
+        print(f'desc:{model}', description)
+        self._set_field(f'desc:{model}', description)
+
+    def get_description(self, model=None):
+        if model is None:
+            model = get_default_image_description_model()
+        description = self._get_field(f'desc:{model}')
+        if description:
+            description = description.replace("`", ' ')
+        return description
+
+    ## -Descriptions- ##
 
     # TODO FIXME
     def get_all_urls(self, date=False, epoch=None):
@@ -530,6 +563,8 @@ def api_get_domains_by_languages(domains_types, languages, meta=False, page=1):
         domains['list_elem'] = metas
         return domains
 
+def get_nb_domains_up_by_type(domain_type):
+    return r_crawler.scard(f'full_{domain_type}_up')
 
 def get_domains_up_by_type(domain_type):
     return r_crawler.smembers(f'full_{domain_type}_up')
@@ -542,6 +577,13 @@ def get_domains_up_by_date(date, domain_type):
 
 def get_domains_down_by_date(date, domain_type):
     return r_crawler.smembers(f'{domain_type}_down:{date}')
+
+def get_domain_up_by_month(domain_type, month):
+    return r_crawler.smembers(f'month_{domain_type}_up:{month}')
+
+def get_domain_up_previous_month(domain_type):
+    month = Date.get_previous_month()
+    return get_domain_up_by_month(domain_type, month)
 
 def get_domains_by_daterange(date_from, date_to, domain_type, up=True, down=False):
     domains = []
@@ -566,6 +608,11 @@ def get_domains_dates_by_daterange(date_from, date_to, domain_types, up=True, do
             if domains:
                 date_domains[date] = list(domains)
     return date_domains
+
+def get_domain_up_iterator():
+    for domain_type in get_all_domains_types():
+        for dom_id in get_domains_up_by_type(domain_type):
+            yield Domain(dom_id)
 
 def get_domains_meta(domains):
     metas = []
@@ -753,6 +800,24 @@ class Domains:
         for domain_type in get_all_domains_types():
             nb += r_crawler.scard(f'{domain_type}_up:{date}')
         return nb
+
+#### API ####
+
+def api_get_onions_by_month(date_year_month):
+    if len(date_year_month) == 2:
+        month = int(date_year_month)
+        year = int(Date.get_current_year())
+    elif len(date_year_month) == 6 or len(date_year_month) == 8:
+        year = int(date_year_month[0:4])
+        if year < 2020:
+            return {'error': 'Invalid month date. Format: 202502'}, 400
+        month = int(date_year_month[4:6])
+    else:
+        return {'error': 'Invalid month date. Format: 202502'}, 400
+    if month < 1 or month > 12:
+        return {'error': 'Invalid month date. Format: 202502'}, 400
+    return get_domain_up_by_month('onion', f'{year}{month}'), 200
+
 
 if __name__ == '__main__':
     _rebuild_vanity_clusters()

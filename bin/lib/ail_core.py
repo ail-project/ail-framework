@@ -17,16 +17,17 @@ r_object = config_loader.get_db_conn("Kvrocks_Objects")
 config_loader = None
 
 AIL_OBJECTS = sorted({'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cookie-name', 'cve', 'cryptocurrency',
-                      'decoded', 'domain', 'dom-hash', 'etag', 'favicon', 'file-name', 'hhhash','item', 'image',
-                      'message', 'ocr', 'pgp', 'qrcode', 'screenshot', 'title', 'user-account', 'username'})
+                      'decoded', 'domain', 'dom-hash', 'etag', 'favicon', 'file-name', 'gtracker', 'hhhash', 'ip',
+                      'item', 'image', 'mail', 'message', 'ocr', 'pgp', 'qrcode', 'ssh-key', 'screenshot', 'title',
+                      'user-account', 'username'})
 
 AIL_OBJECTS_WITH_SUBTYPES = {'chat', 'chat-subchannel', 'cryptocurrency', 'pgp', 'username', 'user-account'}
 
 # TODO by object TYPE ????
 AIL_OBJECTS_CORRELATIONS_DEFAULT = sorted({'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cve', 'cryptocurrency',
-                                           'decoded', 'domain', 'dom-hash', 'favicon', 'file-name', 'item', 'image',
-                                           'message', 'ocr', 'pgp', 'qrcode', 'screenshot', 'title', 'user-account',
-                                           'username'})
+                                           'decoded', 'domain', 'dom-hash', 'favicon', 'file-name', 'gtracker', 'item',
+                                           'image', 'ip', 'mail', 'message', 'ocr', 'pgp', 'qrcode', 'screenshot',
+                                           'ssh-key', 'title', 'user-account', 'username'})
 
 def get_ail_uuid():
     ail_uuid = r_serv_db.get('ail:uuid')
@@ -65,6 +66,11 @@ def is_valid_uuid_v5(header_uuid):
 
 def generate_uuid5(name):
     return str(uuid.uuid5(uuid.NAMESPACE_URL, name))
+
+#### IMAGES ####
+
+def get_default_image_description_model():
+    return 'qwen2.5vl'
 
 #### AIL OBJECTS ####
 
