@@ -17,27 +17,45 @@ jobs:
     # The type of runner that the job will run on
     runs-on: ubuntu-latest
 
+    env:
+      AIL_HOME: ${{ github.workspace }}
+      AIL_BIN: ${{ github.workspace }}/bin
+
     strategy:
        matrix:
-         python-version: ['3.7', '3.8', '3.9', '3.10']
+         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12']
 
 
     # Steps represent a sequence of tasks that will be executed as part of the job
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: 'recursive'
           fetch-depth: 500
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       # Runs a single command using the runners shell
       - name: Install AIL
         run: bash installing_deps.sh
 
+      - name: Install Python dependencies
+        run: |
+              python -m venv .venv
+              source .venv/bin/activate
+              python -m pip install --upgrade pip
+              pip install -r requirements.txt
+
       # Runs a set of commands using the runners shell
       - name: Launch AIL
         run: |
+              source .venv/bin/activate
               pushd bin
               bash LAUNCH.sh -l
               popd
@@ -45,5 +63,7 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Run tests
         run: |
+              source .venv/bin/activate
               pushd bin
               bash LAUNCH.sh -t
+              popd
