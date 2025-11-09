@@ -41,9 +41,9 @@ class Phone(AbstractModule):
         # Waiting time in seconds between to message processed
         self.pending_seconds = 1
 
-    def extract(self, obj_id, content, tag):
+    def extract(self, obj, content, tag):
         extracted = []
-        phones = self.regex_phone_iter('ZZ', obj_id, content)
+        phones = self.regex_phone_iter('ZZ', obj.get_global_id(), content)
         for phone in phones:
             extracted.append([phone[0], phone[1], phone[2], f'tag:{tag}'])
         return extracted
@@ -62,7 +62,7 @@ class Phone(AbstractModule):
             tag = 'infoleak:automatic-detection="phone-number"'
             self.add_message_to_queue(message=tag, queue='Tags')
 
-            self.redis_logger.warning(f'{item.get_id()} contains {len(phone)} Phone numbers')
+            self.logger.info(f'{self.obj.get_global_id()} contains {len(phone)} Phone numbers')
 
         # # List of the regex results in the Item, may be null
         # results = self.REG_PHONE.findall(content)
@@ -70,7 +70,7 @@ class Phone(AbstractModule):
         # # If the list is greater than 4, we consider the Item may contain a list of phone numbers
         # if len(results) > 4:
         #     self.logger.debug(results)
-        #     self.redis_logger.warning(f'{item.get_id()} contains PID (phone numbers)')
+        #     self.logger.info(f'{item.get_id()} contains PID (phone numbers)')
         #
         #     msg = f'infoleak:automatic-detection="phone-number";{item.get_id()}'
         #     self.add_message_to_queue(msg, 'Tags')
@@ -88,7 +88,7 @@ class Phone(AbstractModule):
         #             pass
         #     for country_code in stats:
         #         if stats[country_code] > 4:
-        #             self.redis_logger.warning(f'{item.get_id()} contains Phone numbers with country code {country_code}')
+        #             self.logger.info(f'{item.get_id()} contains Phone numbers with country code {country_code}')
 
 
 if __name__ == '__main__':

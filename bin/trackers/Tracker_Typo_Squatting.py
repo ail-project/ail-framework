@@ -43,14 +43,13 @@ class Tracker_Typo_Squatting(AbstractModule):
         self.exporters = {'mail': MailExporterTracker(),
                           'webhook': WebHookExporterTracker()}
 
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     def compute(self, message):
         # refresh Tracked typo
         if self.last_refresh_typosquatting < Tracker.get_tracker_last_updated_by_type('typosquatting'):
             self.tracked_typosquattings = Tracker.get_tracked_typosquatting()
             self.last_refresh_typosquatting = time.time()
-            self.redis_logger.debug('Tracked typosquatting refreshed')
             print('Tracked typosquatting refreshed')
 
         host = message
@@ -75,8 +74,7 @@ class Tracker_Typo_Squatting(AbstractModule):
             if ail_objects.is_filtered(obj, filters):
                 continue
 
-            print(f'new tracked typosquatting found: {tracked} in {obj_id}')
-            self.redis_logger.warning(f'tracker typosquatting: {tracked} in {obj_id}')
+            print(f'new tracked typosquatting found: {tracked} in {self.obj.get_global_id()}')
 
             tracker.add(obj.get_type(), obj.get_subtype(r_str=True), obj_id)
 
@@ -88,11 +86,22 @@ class Tracker_Typo_Squatting(AbstractModule):
                 else:
                     obj.add_tag(tag)
 
-            if tracker.mail_export():
-                self.exporters['mail'].export(tracker, obj)
+            # Notification Export
+            if tracker.mail_export() or tracker.webhook_export():
+                filter_notifications = False
 
-            if tracker.webhook_export():
-                self.exporters['webhook'].export(tracker, obj)
+                if tracker.is_duplicate_notification_filtering_enabled():
+                    content = self.obj.get_content(r_type='bytes')
+                    filter_notifications = tracker.is_duplicate_content(content)
+
+                if not filter_notifications:
+                    # Mails
+                    if tracker.mail_export():
+                        self.exporters['mail'].export(tracker, obj)
+
+                    # Webhook
+                    if tracker.webhook_export():
+                        self.exporters['webhook'].export(tracker, obj)
 
 
 if __name__ == '__main__':

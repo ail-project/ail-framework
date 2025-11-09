@@ -17,52 +17,60 @@
       	      </a>
       	    </li>
           </ul>
-          <h5 class="d-flex text-muted w-100" id="nav_sync">
-      		  <span>AIL SYNC</span>
-      		</h5>
-          <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100"> <!--nav-pills-->
-            <li class="nav-item">
-      	      <a class="nav-link" href="{{url_for('ail_2_ail_sync.ail_2_ail_dashboard')}}" id="nav_ail_sync">
-      	        <img src="{{ url_for('static', filename='image/ail.png')}}" alt="AIL servers" style="width:25px;">
-      	        <span>AIL SYNC</span>
-      	      </a>
-      	    </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{url_for('ail_2_ail_sync.ail_servers')}}" id="nav_ail_servers">
-                <i class="fas fa-server"></i>
-                <span>Servers</span>
-              </a>
-            </li>
-            <li class="nav-item">
-             <a class="nav-link" href="{{url_for('ail_2_ail_sync.sync_queues')}}" id="navsync_queues">
-               <i class="fas fa-stream"></i>
-               <span>Sync queues</span>
-             </a>
-           </li>
-          </ul>
+          {% if acl_admin %}
+              <h5 class="d-flex text-muted w-100" id="nav_sync">
+                  <span>AIL SYNC</span>
+                </h5>
+              <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100"> <!--nav-pills-->
+                <li class="nav-item">
+                  <a class="nav-link" href="{{url_for('ail_2_ail_sync.ail_2_ail_dashboard')}}" id="nav_ail_sync">
+                    <img src="{{ url_for('static', filename='image/ail.png')}}" alt="AIL servers" style="width:25px;">
+                    <span>AIL SYNC</span>
+                  </a>
+                </li>
+                <li class="nav-item">
+                  <a class="nav-link" href="{{url_for('ail_2_ail_sync.ail_servers')}}" id="nav_ail_servers">
+                    <i class="fas fa-server"></i>
+                    <span>Servers</span>
+                  </a>
+                </li>
+                <li class="nav-item">
+                 <a class="nav-link" href="{{url_for('ail_2_ail_sync.sync_queues')}}" id="navsync_queues">
+                   <i class="fas fa-stream"></i>
+                   <span>Sync queues</span>
+                 </a>
+               </li>
+              </ul>
+          {% endif %}
           <h5 class="d-flex text-muted w-100" id="nav_settings">
       		  <span>Settings</span>
       		</h5>
           <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100"> <!--nav-pills-->
-            <!-- <li class="nav-item">
-      	      <a class="nav-link" href="{{url_for('settings.ail_configs')}}" id="nav_ail_configs">
-      	        <img src="{{ url_for('static', filename='image/ail.png')}}" alt="AIL servers" style="width:25px;">
-      	        <span>AIL Configs</span>
-      	      </a>
-      	    </li> -->
-            <!-- <li class="nav-item">
-      	      <a class="nav-link" href="{{url_for('settings.passive_dns')}}" id="nav_data_retention">
-      	        <i class="fas fa-database"></i>
-                <i class="fas fa-hourglass"></i>
-                <i class="fas fa-clock"></i>
-                <i class="fas fa-stopwatch"></i>
-      	        <span>Data Retention</span>
-      	      </a>
-      	    </li> -->
+{#            <li class="nav-item">#}
+{#      	      <a class="nav-link" href="{{url_for('settings_b.ail_configs')}}" id="nav_ail_configs">#}
+{#      	        <img src="{{ url_for('static', filename='image/ail.png')}}" alt="AIL servers" style="width:25px;">#}
+{#      	        <span>AIL Configs</span>#}
+{#      	      </a>#}
+{#      	    </li>#}
+{#            <li class="nav-item">#}
+{#      	      <a class="nav-link" href="{{url_for('settings_b.passive_dns')}}" id="nav_data_retention">#}
+{#      	        <i class="fas fa-database"></i>#}
+{#                <i class="fas fa-hourglass"></i>#}
+{#                <i class="fas fa-clock"></i>#}
+{#                <i class="fas fa-stopwatch"></i>#}
+{#      	        <span>Data Retention</span>#}
+{#      	      </a>#}
+{#      	    </li>#}
             <li class="nav-item">
-      	      <a class="nav-link" href="{{url_for('settings.passive_dns')}}" id="passive_dns">
+      	      <a class="nav-link" href="{{url_for('settings_b.passive_dns')}}" id="passive_dns">
       	        <img src="{{ url_for('static', filename='image/d4-logo.png')}}" alt="D4 project" style="width:25px;">
       	        <span>Passive DNS</span>
+      	      </a>
+      	    </li>
+            <li class="nav-item">
+      	      <a class="nav-link" href="{{url_for('settings_b.passive_ssh')}}" id="passive_ssh">
+      	        <img src="{{ url_for('static', filename='image/passivessh.png')}}" alt="Passive SSH" style="width:25px;">
+      	        <span>Passive SSH</span>
       	      </a>
       	    </li>
           </ul>
@@ -71,7 +79,7 @@
           </h5>
           <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100"> <!--nav-pills-->
       	    <li class="nav-item">
-      	      <a class="nav-link" href="{{url_for('settings.edit_profile')}}" id="nav_edit_profile">
+      	      <a class="nav-link" href="{{url_for('settings_b.user_profile')}}" id="nav_edit_profile">
       	        <i class="fas fa-user-edit"></i>
       	        <span>My Profile</span>
       	      </a>
@@ -83,22 +91,39 @@
       	      </a>
       	    </li>
           </ul>
-        {% if admin_level %}
+        {% if acl_admin %}
         		<h5 class="d-flex text-muted w-100 py-2" id="nav_user_management">
         		  <span>User Management</span>
         		</h5>
             <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100"> <!--nav-pills-->
         	    <li class="nav-item">
-        	      <a class="nav-link" href="{{url_for('settings.create_user')}}" id="nav_create_user">
+        	      <a class="nav-link" href="{{url_for('settings_b.create_user')}}" id="nav_create_user">
         	        <i class="fas fa-user-plus"></i>
         	        <span>Create User</span>
         	      </a>
         	    </li>
               <li class="nav-item">
-        	      <a class="nav-link" href="{{url_for('settings.users_list')}}" id="nav_users_list">
+        	      <a class="nav-link" href="{{url_for('settings_b.users_list')}}" id="nav_users_list">
         	        <i class="fas fa-users"></i>
         	        <span>Users List</span>
         	      </a>
+        	    </li>
+            </ul>
+            <h5 class="d-flex text-muted w-100 py-2" id="nav_orgs_management">
+                <span>Organisations</span>
+            </h5>
+            <ul class="nav flex-md-column flex-row navbar-nav justify-content-between w-100">
+                <li class="nav-item">
+                    <a class="nav-link" href="{{url_for('settings_b.organisations_list')}}" id="nav_orgs_list">
+                        <i class="fas fa-landmark"></i>
+                        <span>Organisations List</span>
+                    </a>
+        	    </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="{{url_for('settings_b.create_organisation')}}" id="nav_create_org">
+                        <i class="fas fa-plus"></i>
+                        <span>Create Organisation</span>
+                    </a>
         	    </li>
             </ul>
         {% endif %}

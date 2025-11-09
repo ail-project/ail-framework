@@ -23,6 +23,7 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from lib import ail_core
+from lib import ail_orgs
 from lib import ConfigLoader
 from lib import Tag
 from lib.exceptions import UpdateInvestigationError
@@ -47,13 +48,10 @@ def sanityze_uuid(UUID):
     sanityzed_uuid = uuid.UUID(hex=UUID, version=4)
     return str(sanityzed_uuid).replace('-', '')
 
-def exists_obj_type(obj_type):
-    return obj_type in ['domain', 'item', 'pgp', 'cryptocurrency', 'decoded', 'screenshot', 'username']
-
 def generate_uuid():
     return str(uuid.uuid4()).replace('-', '')
 
-##-- UUID --##
+## -- UUID -- ##
 
 # status
 # created
@@ -92,6 +90,12 @@ class Investigation(object):
     def __init__(self, investigation_uuid):
         self.uuid = investigation_uuid
 
+    def _get_field(self, field):
+        return r_tracking.hget(f'investigations:data:{self.uuid}', field)
+
+    def _set_field(self, field, value):
+        r_tracking.hset(f'investigations:data:{self.uuid}', field, value)
+
     def exists(self):
         return r_tracking.exists(f'investigations:data:{self.uuid}')
 
@@ -104,6 +108,49 @@ class Investigation(object):
     # # TODO: Replace by title ??????
     def get_name(self):
         return r_tracking.hget(f'investigations:data:{self.uuid}', 'name')
+
+    ## LEVEL ##
+
+    def get_level(self):
+        return int(r_tracking.hget(f'investigations:data:{self.uuid}', 'level'))
+
+    def set_level(self, level, org_uuid):
+        r_tracking.hset(f'investigations:data:{self.uuid}', 'level', level)
+        # Global
+        if level == 1:
+            r_tracking.sadd('investigations', self.uuid)
+        # Org
+        elif level == 2:
+            self.add_to_org(org_uuid)
+
+    def reset_level(self, old_level, new_level, new_org_uuid):
+        if old_level == 1:
+            r_tracking.srem('investigations', self.uuid)
+        # Org
+        elif old_level == 2:
+            ail_orgs.remove_obj_to_org(self.get_org(), 'investigation', self.uuid)
+        self.set_level(new_level, new_org_uuid)
+
+    def check_level(self, user_org):
+        level = self.get_level()
+        if level == 1:
+            return True
+        elif level == 2:
+            return self.get_org() == user_org
+
+    ## ORG ##
+
+    def get_creator_org(self):
+        return r_tracking.hget(f'investigations:data:{self.uuid}', 'creator_org')
+
+    def get_org(self):
+        return r_tracking.hget(f'investigations:data:{self.uuid}', 'org')
+
+    def add_to_org(self, org_uuid):
+        r_tracking.hset(f'investigations:data:{self.uuid}', 'org', org_uuid)
+        ail_orgs.add_obj_to_org(org_uuid, 'investigation', self.uuid)
+
+    ## -ORG- ##
 
     def get_threat_level(self):
         try:
@@ -148,8 +195,8 @@ class Investigation(object):
             last_change = datetime.datetime.fromtimestamp(float(last_change)).strftime('%Y-%m-%d %H:%M:%S')
         return last_change
 
-    def get_misp_events(self):
-        return r_tracking.smembers(f'investigations:misp:{self.uuid}')
+    # def get_misp_events(self):
+    #     return r_tracking.smembers(f'investigations:misp:{self.uuid}')
 
     # # TODO: DATE FORMAT
     def get_metadata(self, options=set(), r_str=False):
@@ -166,15 +213,19 @@ class Investigation(object):
                 'analysis': analysis,
                 'tags': list(self.get_tags()),
                 'user_creator': self.get_creator_user(),
+                'level': self.get_level(),
+                'org': self.get_org(),
                 'date': self.get_date(),
                 'timestamp': self.get_timestamp(r_str=r_str),
                 'last_change': self.get_last_change(r_str=r_str),
                 'info': self.get_info(),
                 'nb_objects': self.get_nb_objects(),
-                'misp_events': list(self.get_misp_events())
+                # 'misp_events': list(self.get_misp_events())
                 }
         if 'objects' in options:
             meta['objects'] = self.get_objects()
+        if 'org_name' in options and meta['org']:
+            meta['org_name'] = ail_orgs.Organisation(self.get_org()).get_name()
         return meta
 
     def set_name(self, name):
@@ -270,20 +321,34 @@ class Investigation(object):
             self.unregister_object(obj_id, obj_type, subtype=subtype)
 
         r_tracking.srem('investigations:all', self.uuid)
+        # level
+        level = self.get_level()
+        if level == 1:
+            r_tracking.srem('investigations', self.uuid)
+        elif level == 2:
+            ail_orgs.remove_obj_to_org(self.get_org(), 'investigation', self.uuid)
+
         # user map
         r_tracking.srem(f'investigations:user:{self.get_creator_user()}', self.uuid)
         # metadata
         r_tracking.delete(f'investigations:data:{self.uuid}')
         r_tracking.delete(f'investigations:tags:{self.uuid}')
         r_tracking.delete(f'investigations:misp:{self.uuid}')
+        return self.uuid
 
-##--  Class  --##
+## --  -- ##
 
 def get_all_investigations():
     return r_tracking.smembers('investigations:all')
 
 def exists_investigation(investigation_uuid):
     return r_tracking.sismember('investigations:all', investigation_uuid)
+
+def get_global_investigations():
+    return r_tracking.smembers('investigations')
+
+def get_org_investigations(org_uuid):
+    return ail_orgs.get_org_objs_by_type(org_uuid, 'investigation')
 
 # created by user
 def get_user_all_investigations(user_id):
@@ -309,8 +374,8 @@ def _set_timestamp(investigation_uuid, timestamp):
 
 # analysis - threat level - info - date - creator
 
-def _re_create_investagation(investigation_uuid, user_id, date, name, threat_level, analysis, info, tags, last_change, timestamp, misp_events):
-    create_investigation(user_id, date, name, threat_level, analysis, info, tags=tags, investigation_uuid=investigation_uuid)
+def _re_create_investigation(investigation_uuid, user_org, user_id, level, date, name, threat_level, analysis, info, tags, last_change, timestamp, misp_events):
+    create_investigation(user_org, user_id, level, date, name, threat_level, analysis, info, tags=tags, investigation_uuid=investigation_uuid)
     if timestamp:
         _set_timestamp(investigation_uuid, timestamp)
     investigation = Investigation(investigation_uuid)
@@ -323,7 +388,7 @@ def _re_create_investagation(investigation_uuid, user_id, date, name, threat_lev
 # # TODO: limit description + name
 # # TODO: sanitize tags
 # # TODO: sanitize date
-def create_investigation(user_id, date, name, threat_level, analysis, info, tags=[], investigation_uuid=None):
+def create_investigation(user_org, user_id, level, date, name, threat_level, analysis, info, tags=[], investigation_uuid=None):
     if investigation_uuid:
         if not is_valid_uuid_v4(investigation_uuid):
             investigation_uuid = generate_uuid()
@@ -331,12 +396,15 @@ def create_investigation(user_id, date, name, threat_level, analysis, info, tags
         investigation_uuid = generate_uuid()
     r_tracking.sadd('investigations:all', investigation_uuid)
     # user map
-    r_tracking.sadd(f'investigations:user:{user_id}', investigation_uuid)
+    r_tracking.sadd(f'investigations:user:{user_id}', investigation_uuid)    # TODO REFACTOR ME
     # metadata
+    r_tracking.hset(f'investigations:data:{investigation_uuid}', 'creator_org', user_org)
     r_tracking.hset(f'investigations:data:{investigation_uuid}', 'creator_user', user_id)
 
     # TODO: limit info + name
     investigation = Investigation(investigation_uuid)
+    investigation.set_level(level, user_org)
+
     investigation.set_info(info)
     #investigation.set_name(name) ##############################################
     investigation.set_date(date)
@@ -360,23 +428,61 @@ def get_all_investigations_meta(r_str=False):
         investigations_meta.append(investigation.get_metadata(r_str=r_str))
     return investigations_meta
 
-def get_investigations_selector():
+def get_global_investigations_meta(r_str=False):
+    investigations_meta = []
+    for investigation_uuid in get_global_investigations():
+        investigation = Investigation(investigation_uuid)
+        investigations_meta.append(investigation.get_metadata(r_str=r_str))
+    return investigations_meta
+
+
+def get_org_investigations_meta(org_uuid, r_str=False):
+    investigations_meta = []
+    for investigation_uuid in get_org_investigations(org_uuid):
+        investigation = Investigation(investigation_uuid)
+        investigations_meta.append(investigation.get_metadata(r_str=r_str, options={'org_name'}))
+    return investigations_meta
+
+def get_orgs_investigations_meta(r_str=False):
+    investigations_meta = []
+    for tracker_uuid in get_all_investigations():
+        inv = Investigation(tracker_uuid)
+        if inv.get_level() == 2:
+            investigations_meta.append(inv.get_metadata(r_str=r_str, options={'org_name'}))
+    return investigations_meta
+
+
+def get_investigations_selector(org_uuid):
     l_investigations = []
-    for investigation_uuid in get_all_investigations():
+    for investigation_uuid in get_global_investigations():
+        investigation = Investigation(investigation_uuid)
+        name = investigation.get_info()
+        l_investigations.append({"id": investigation_uuid, "name": name})
+    for investigation_uuid in get_org_investigations(org_uuid):
         investigation = Investigation(investigation_uuid)
         name = investigation.get_info()
         l_investigations.append({"id": investigation_uuid, "name": name})
     return l_investigations
 
-    #{id:'8dc4b81aeff94a9799bd70ba556fa345',name:"Paris"}
+####  ACL  ####
 
+def api_check_investigation_acl(inv, user_org, user_id, user_role, action):
+    if not ail_orgs.check_obj_access_acl(inv, user_org, user_id, user_role, action):
+        return {"status": "error", "reason": "Access Denied"}, 403
+
+def api_is_allowed_to_edit_investigation_level(inv, user_org, user_id, user_role, new_level):
+    if not ail_orgs.check_acl_edit_level(inv, user_org, user_id, user_role, new_level):
+        return {"status": "error", "reason": "Access Denied - Investigation level"}, 403
 
 ####  API  ####
 
-def api_get_investigation(investigation_uuid): # TODO check if is UUIDv4
+def api_get_investigation(user_org, user_id, user_role, investigation_uuid):  # TODO check if is UUIDv4
     investigation = Investigation(investigation_uuid)
     if not investigation.exists():
         return {'status': 'error', 'reason': 'Investigation Not Found'}, 404
+    res = api_check_investigation_acl(investigation, user_org, user_id, user_role, 'view')
+    if res:
+        return res
 
     meta = investigation.get_metadata(options={'objects'}, r_str=False)
     # objs = []
@@ -392,6 +498,7 @@ def api_get_investigation(investigation_uuid): # TODO check if is UUIDv4
 # # TODO: SANITYZE Fields
 # # TODO: Name ?????
 def api_add_investigation(json_dict):
+    user_org = json_dict.get('user_org')
     user_id = json_dict.get('user_id')
     name = json_dict.get('name') ##### mandatory ?
     name = escape(name)
@@ -401,6 +508,14 @@ def api_add_investigation(json_dict):
     # # TODO: sanityze date
     date = json_dict.get('date')
 
+    level = json_dict.get('level', 1)
+    try:
+        level = int(level)
+    except TypeError:
+        level = 1
+    if level not in range(1, 3):
+        level = 1
+
     info = json_dict.get('info', '')
     info = escape(info)
     info = info[:1000]
@@ -409,13 +524,13 @@ def api_add_investigation(json_dict):
         return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
 
     try:
-        res = create_investigation(user_id, date, name, threat_level, analysis, info, tags=tags)
+        res = create_investigation(user_org, user_id, level, date, name, threat_level, analysis, info, tags=tags)
     except UpdateInvestigationError as e:
         return e.message, 400
     return res, 200
 
 # # TODO: edit threat level / status
-def api_edit_investigation(json_dict):
+def api_edit_investigation(user_org, user_id, user_role, json_dict):
     investigation_uuid = json_dict.get('uuid', '').replace(' ', '')
     if not is_valid_uuid_v4(investigation_uuid):
         return {"status": "error", "reason": "Invalid Investigation uuid"}, 400
@@ -423,6 +538,20 @@ def api_edit_investigation(json_dict):
     if not exists_investigation(investigation_uuid):
         return {"status": "error", "reason": "Investigation not found"}, 404
     investigation = Investigation(investigation_uuid)
+    res = api_check_investigation_acl(investigation, user_org, user_id, user_role, 'edit')
+    if res:
+        return res
+
+    level = json_dict.get('level', 1)
+    try:
+        level = int(level)
+    except TypeError:
+        level = 1
+    if level not in range(1, 3):
+        level = 1
+    res = api_is_allowed_to_edit_investigation_level(investigation, user_org, user_id, user_role, level)
+    if res:
+        return res
 
     name = json_dict.get('name') ##### mandatory ?
     name = escape(name)
@@ -445,6 +574,10 @@ def api_edit_investigation(json_dict):
     if not Tag.are_enabled_tags(tags):
         return {"status": "error", "reason": "Invalid/Disabled tags"}, 400
 
+    old_level = investigation.get_level()
+    if level != old_level:
+        investigation.reset_level(old_level, level, user_org)
+
     investigation.set_info(info)
     investigation.set_name(name)
     investigation.set_tags(tags)
@@ -454,7 +587,7 @@ def api_edit_investigation(json_dict):
 
     return investigation_uuid, 200
 
-def api_delete_investigation(json_dict):
+def api_delete_investigation(user_org, user_id, user_role, json_dict):
     investigation_uuid = json_dict.get('uuid', '').replace(' ', '')
     if not is_valid_uuid_v4(investigation_uuid):
         return {"status": "error", "reason": "Invalid Investigation uuid"}, 400
@@ -462,10 +595,13 @@ def api_delete_investigation(json_dict):
     if not exists_investigation(investigation_uuid):
         return {"status": "error", "reason": "Investigation not found"}, 404
     investigation = Investigation(investigation_uuid)
+    res = api_check_investigation_acl(investigation, user_org, user_id, user_role, 'delete')
+    if res:
+        return res
     res = investigation.delete()
     return res, 200
 
-def api_register_object(json_dict):
+def api_register_object(user_org, user_id, user_role, json_dict):
     investigation_uuid = json_dict.get('uuid', '').replace(' ', '')
     if not is_valid_uuid_v4(investigation_uuid):
         return {"status": "error", "reason": f"Invalid Investigation uuid: {investigation_uuid}"}, 400
@@ -473,6 +609,9 @@ def api_register_object(json_dict):
     if not exists_investigation(investigation_uuid):
         return {"status": "error", "reason": f"Investigation not found: {investigation_uuid}"}, 404
     investigation = Investigation(investigation_uuid)
+    res = api_check_investigation_acl(investigation, user_org, user_id, user_role, 'edit')
+    if res:
+        return res
 
     obj_type = json_dict.get('type', '').replace(' ', '')
     if obj_type not in ail_core.get_all_objects():
@@ -481,7 +620,7 @@ def api_register_object(json_dict):
     subtype = json_dict.get('subtype', '')
     if subtype == 'None':
         subtype = ''
-    obj_id = json_dict.get('id', '').replace(' ', '')
+    obj_id = json_dict.get('id', '').rstrip()
 
     comment = json_dict.get('comment', '')
     # if comment:
@@ -489,7 +628,7 @@ def api_register_object(json_dict):
     res = investigation.register_object(obj_id, obj_type, subtype, comment=comment)
     return res, 200
 
-def api_unregister_object(json_dict):
+def api_unregister_object(user_org, user_id, user_role, json_dict):
     investigation_uuid = json_dict.get('uuid', '').replace(' ', '')
     if not is_valid_uuid_v4(investigation_uuid):
         return {"status": "error", "reason": f"Invalid Investigation uuid: {investigation_uuid}"}, 400
@@ -497,6 +636,9 @@ def api_unregister_object(json_dict):
     if not exists_investigation(investigation_uuid):
         return {"status": "error", "reason": f"Investigation not found: {investigation_uuid}"}, 404
     investigation = Investigation(investigation_uuid)
+    res = api_check_investigation_acl(investigation, user_org, user_id, user_role, 'edit')
+    if res:
+        return res
 
     obj_type = json_dict.get('type', '').replace(' ', '')
     subtype = json_dict.get('subtype', '')
@@ -506,7 +648,7 @@ def api_unregister_object(json_dict):
     res = investigation.unregister_object(obj_id, obj_type, subtype)
     return res, 200
 
-##--  API  --##
+## -- API -- ##
 
 #
 # if __name__ == '__main__':

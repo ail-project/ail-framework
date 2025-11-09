@@ -10,6 +10,7 @@ Process Feeder Json (example: Twitter feeder)
 import datetime
 import os
 import sys
+import time
 
 from abc import ABC
 
@@ -18,10 +19,12 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from importer.feeders.Default import DefaultFeeder
+from lib.ail_core import get_chat_instance_name
 from lib.objects.Chats import Chat
 from lib.objects import ChatSubChannels
 from lib.objects import ChatThreads
 from lib.objects import Images
+from lib.objects import Items
 from lib.objects import Messages
 from lib.objects import FilesNames
 # from lib.objects import Files
@@ -59,10 +62,10 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         return self.name
 
     def get_chat_network(self):
-        self.json_data['meta'].get('network', None)
+        return self.json_data['meta'].get('network', None)
 
     def get_chat_address(self):
-        self.json_data['meta'].get('address', None)
+        return self.json_data['meta'].get('address', None)
 
     def get_chat_instance_uuid(self):
         chat_instance_uuid = chats_viewer.create_chat_service_instance(self.get_chat_protocol(),
@@ -86,11 +89,22 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
     def get_message_id(self):
         return self.json_data['meta']['id']
 
+    def get_media_id(self):
+        return self.json_data['meta'].get('media', {}).get('id')
+
     def get_media_name(self):
         return self.json_data['meta'].get('media', {}).get('name')
 
     def get_reactions(self):
         return self.json_data['meta'].get('reactions', [])
+
+    def get_date(self):
+        if self.json_data['meta'].get('date'):
+            date = datetime.datetime.fromtimestamp(self.json_data['meta']['date']['timestamp'])
+            date = date.strftime('%Y%m%d')
+        else:
+            date = datetime.date.today().strftime("%Y%m%d")
+        return date
 
     def get_message_timestamp(self):
         if not self.json_data['meta'].get('date'):
@@ -119,7 +133,7 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         return self.json_data['meta'].get('reply_to', {}).get('message_id')
 
     def get_message_forward(self):
-        return self.json_data['meta'].get('forward')
+        return self.json_data['meta'].get('forward', {})
 
     def get_message_content(self):
         decoded = base64.standard_b64decode(self.json_data['data'])
@@ -145,18 +159,53 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         # channel id
         # thread id
 
-        # TODO sanitize obj type
+        # TODO sanitize obj type ################### CHECK IF IS MESSAGE BY DEFAULT
         obj_type = self.get_obj_type()
-
         if obj_type == 'image':
             self.obj = Images.Image(self.json_data['data-sha256'])
-
+        elif obj_type == 'text':
+            d = self.get_date()
+            instance_name = get_chat_instance_name(self.get_chat_instance_uuid())
+            item_id = f'{instance_name}/{d[0:4]}/{d[4:6]}/{d[6:8]}/{self.json_data["data-sha256"]}.gz'
+            self.obj = Items.Item(item_id)
         else:
             obj_id = Messages.create_obj_id(self.get_chat_instance_uuid(), chat_id, message_id, timestamp, thread_id=thread_id)
             self.obj = Messages.Message(obj_id)
         return self.obj
 
-    def process_chat(self, new_objs, obj, date, timestamp, reply_id=None):
+    # TODO handle subchannel
+    def _process_chat(self, meta_chat, date, new_objs=None): #TODO NONE DATE???
+        chat = Chat(meta_chat['id'], self.get_chat_instance_uuid())
+
+        # Obj Daterange
+        chat.add(date)
+
+        if meta_chat.get('name'):
+            chat.set_name(meta_chat['name'])
+
+        if meta_chat.get('info'):
+            chat.set_info(meta_chat['info'])
+
+        if meta_chat.get('date'): # TODO check if already exists
+            chat.set_created_at(int(meta_chat['date']['timestamp']))
+
+        if meta_chat.get('icon'):
+            img = Images.create(meta_chat['icon'], b64=True)
+            img.add(date, chat)
+            chat.set_icon(img.get_global_id())
+            if new_objs:
+                new_objs.add(img)
+
+        if meta_chat.get('username'):
+            username = Username(meta_chat['username'], self.get_chat_protocol())
+            chat.update_username_timeline(username.get_global_id(), int(time.time()))
+            username.add(date, obj=chat)  # TODO TODAY DATE
+
+        return chat
+
+    ###########################################################################################################
+
+    def process_chat(self, new_objs, obj, date, timestamp, feeder_timestamp, reply_id=None):
         meta = self.json_data['meta']['chat'] # todo replace me by function
         chat = Chat(self.get_chat_id(), self.get_chat_instance_uuid())
         subchannel = None
@@ -182,17 +231,20 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
         if meta.get('username'):
             username = Username(meta['username'], self.get_chat_protocol())
-            chat.update_username_timeline(username.get_global_id(), timestamp)
+            chat.update_username_timeline(username.get_global_id(), feeder_timestamp)
 
         if meta.get('subchannel'):
             subchannel, thread = self.process_subchannel(obj, date, timestamp, reply_id=reply_id)
             chat.add_children(obj_global_id=subchannel.get_global_id())
+            if obj.type == 'message':
+                chat.add_chat_with_messages()
         else:
             if obj.type == 'message':
                 if self.get_thread_id():
                     thread = self.process_thread(obj, chat, date, timestamp, reply_id=reply_id)
                 else:
                     chat.add_message(obj.get_global_id(), self.get_message_id(), timestamp, reply_id=reply_id)
+                chat.add_chat_with_messages()
 
         chats_obj = [chat]
         if subchannel:
@@ -206,8 +258,7 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         subchannel = ChatSubChannels.ChatSubChannel(f'{self.get_chat_id()}/{meta["id"]}', self.get_chat_instance_uuid())
         thread = None
 
-        # TODO correlation with obj = message/image
-        subchannel.add(date)
+        subchannel.add(date, obj)
 
         if meta.get('date'): # TODO check if already exists
             subchannel.set_created_at(int(meta['date']['timestamp']))
@@ -249,6 +300,39 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         # TODO
         # else:
         #   # ADD NEW MESSAGE REF (used by discord)
+
+    ##########################################################################################
+
+    def _process_user(self, meta, date, timestamp, new_objs=None):
+        user_account = UsersAccount.UserAccount(meta['id'], self.get_chat_instance_uuid())
+        if meta.get('username'):
+            username = Username(meta['username'], self.get_chat_protocol())
+            # TODO timeline or/and correlation ????
+            user_account.add_correlation(username.type, username.get_subtype(r_str=True), username.id)
+            user_account.update_username_timeline(username.get_global_id(), timestamp)
+
+            # Username---Message
+            username.add(date)  # TODO # correlation message ??? ###############################################################
+
+        # ADDITIONAL METAS
+        if meta.get('firstname'):
+            user_account.set_first_name(meta['firstname'])
+        if meta.get('lastname'):
+            user_account.set_last_name(meta['lastname'])
+        if meta.get('phone'):
+            user_account.set_phone(meta['phone'])
+
+        if meta.get('icon'):
+            img = Images.create(meta['icon'], b64=True)
+            img.add(date, user_account)
+            user_account.set_icon(img.get_global_id())
+            new_objs.add(img)
+
+        if meta.get('info'):
+            user_account.set_info(meta['info'])
+
+        user_account.add(date)
+        return user_account
 
     def process_sender(self, new_objs, obj, date, timestamp):
         meta = self.json_data['meta'].get('sender')
@@ -298,8 +382,12 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
         if self.obj:
             objs.add(self.obj)
         new_objs = set()
+        chats_objs = set()
 
         date, timestamp = self.get_message_date_timestamp()
+        feeder_timestamp = self.get_feeder_timestamp()
+        if not feeder_timestamp:
+            feeder_timestamp = timestamp
 
         # REPLY
         reply_id = self.get_message_reply_id()
@@ -323,7 +411,7 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
                 obj.add_reaction(reaction['reaction'], int(reaction['count']))
         elif self.obj.type == 'chat':
             pass
-        else:
+        else:  # IMAGE + ITEM
             chat_id = self.get_chat_id()
             thread_id = self.get_thread_id()
             channel_id = self.get_subchannel_id()
@@ -335,18 +423,32 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
                 message.create('')
                 objs.add(message)
 
-            if message.exists(): # TODO Correlation user-account image/filename ????
-                obj = Images.create(self.get_message_content())
-                obj.add(date, message)
-                obj.set_parent(obj_global_id=message.get_global_id())
-
-                # FILENAME
-                media_name = self.get_media_name()
-                if media_name:
-                    FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
-
+            if message.exists():
+                # REACTIONS
                 for reaction in self.get_reactions():
                     message.add_reaction(reaction['reaction'], int(reaction['count']))
+
+                if self.obj.type == 'image':
+                    obj = Images.create(self.get_message_content())
+                    obj.add(date, message)
+                    obj.set_parent(obj_global_id=message.get_global_id())
+
+                    # FILENAME
+                    media_name = self.get_media_name()
+                    if media_name:
+                        FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
+
+                elif self.obj.type == 'item':
+                    obj = self.obj
+                    if not obj.exists():
+                        obj.create(self.get_message_content())
+                    obj.add_correlation('message', '', message.id)
+
+                    # FILENAME
+                    media_name = self.get_media_name()
+                    if media_name:
+                        file_name = FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
+                        file_name.add_correlation('item', '', obj.id)
 
         for obj in objs:  # TODO PERF avoid parsing metas multiple times
 
@@ -356,30 +458,14 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
             print(obj.id)
 
             # CHAT
-            chat_objs = self.process_chat(new_objs, obj, date, timestamp, reply_id=reply_id)
-
-            # Message forward
-            # if self.get_json_meta().get('forward'):
-            #     forward_from = self.get_message_forward()
-            #     print('-----------------------------------------------------------')
-            #     print(forward_from)
-            #     if forward_from:
-            #         forward_from_type = forward_from['from']['type']
-            #         if forward_from_type == 'channel' or forward_from_type == 'chat':
-            #             chat_forward_id = forward_from['from']['id']
-            #             chat_forward = Chat(chat_forward_id, self.get_chat_instance_uuid())
-            #             if chat_forward.exists():
-            #                 for chat_obj in chat_objs:
-            #                     if chat_obj.type == 'chat':
-            #                         chat_forward.add_relationship(chat_obj.get_global_id(), 'forward')
-            #                         # chat_forward.add_relationship(obj.get_global_id(), 'forward')
+            curr_chats_objs = self.process_chat(new_objs, obj, date, timestamp, feeder_timestamp, reply_id=reply_id)
 
             # SENDER # TODO HANDLE NULL SENDER
-            user_account = self.process_sender(new_objs, obj, date, timestamp)
+            user_account = self.process_sender(new_objs, obj, date, feeder_timestamp)
 
             if user_account:
-            # UserAccount---ChatObjects
-                for obj_chat in chat_objs:
+                # UserAccount---ChatObjects
+                for obj_chat in curr_chats_objs:
                     user_account.add_correlation(obj_chat.type, obj_chat.get_subtype(r_str=True), obj_chat.id)
 
             # if chat: # TODO Chat---Username correlation ???
@@ -390,5 +476,74 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
                 # image
                 #       -> subchannel ?
                 #       -> thread id ?
+
+            chats_objs.update(curr_chats_objs)
+
+        #######################################################################
+
+        ## FORWARD ##
+        chat_fwd = None
+        user_fwd = None
+        if self.get_json_meta().get('forward'):
+            meta_fwd = self.get_message_forward()
+            if meta_fwd.get('chat'):
+                chat_fwd = self._process_chat(meta_fwd['chat'], date, new_objs=new_objs)
+                for chat_obj in chats_objs:
+                    if chat_obj.type == 'chat':
+                        chat_fwd.add_relationship(chat_obj.get_global_id(), 'forwarded_to')
+            if meta_fwd.get('user'):
+                user_fwd = self._process_user(meta_fwd['user'], date, feeder_timestamp, new_objs=new_objs)  # TODO date, timestamp ???
+                for chat_obj in chats_objs:
+                    if chat_obj.type == 'chat':
+                        user_fwd.add_relationship(chat_obj.get_global_id(), 'forwarded_to')
+
+        # TODO chat_fwd -> message
+        if chat_fwd or user_fwd:
+            for obj in objs:
+                if obj.type == 'message':
+                    if chat_fwd:
+                        obj.add_relationship(chat_fwd.get_global_id(), 'forwarded_from')
+                    if user_fwd:
+                        obj.add_relationship(user_fwd.get_global_id(), 'forwarded_from')
+                    for chat_obj in chats_objs:
+                        if chat_obj.type == 'chat':
+                            obj.add_relationship(chat_obj.get_global_id(), 'in')
+        # -FORWARD- #
+
+        ## MENTION ##
+        if self.get_json_meta().get('mentions'):
+            for mention in self.get_json_meta()['mentions'].get('chats', []):
+                m_obj = self._process_chat(mention, date, new_objs=new_objs)
+                if m_obj:
+                    for chat_obj in chats_objs:
+                        if chat_obj.type == 'chat':
+                            chat_obj.add_relationship(m_obj.get_global_id(), 'mention')
+
+                    # TODO PERF
+                    # TODO Keep message obj + chat obj in global var
+                    for obj in objs:
+                        if obj.type == 'message':
+                            obj.add_relationship(m_obj.get_global_id(), 'mention')
+                            for chat_obj in chats_objs:
+                                if chat_obj.type == 'chat':
+                                    obj.add_relationship(chat_obj.get_global_id(), 'in')
+
+            for mention in self.get_json_meta()['mentions'].get('users', []):
+                m_obj = self._process_user(mention, date, feeder_timestamp, new_objs=new_objs)  # TODO date ???
+                if m_obj:
+                    for chat_obj in chats_objs:
+                        if chat_obj.type == 'chat':
+                            chat_obj.add_relationship(m_obj.get_global_id(), 'mention')
+
+                    # TODO PERF
+                    # TODO Keep message obj + chat obj in global var
+                    for obj in objs:
+                        if obj.type == 'message':
+                            obj.add_relationship(m_obj.get_global_id(), 'mention')
+                            for chat_obj in chats_objs:
+                                if chat_obj.type == 'chat':
+                                    obj.add_relationship(chat_obj.get_global_id(), 'in')
+
+        # -MENTION- #
 
         return new_objs | objs

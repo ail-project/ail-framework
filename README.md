@@ -29,7 +29,7 @@ AIL framework - Framework for Analysis of Information Leaks
 
 AIL is a modular framework to analyse potential information leaks from unstructured data sources like pastes from Pastebin or similar services or unstructured data streams. AIL framework is flexible and can be extended to support other functionalities to mine or process sensitive information (e.g. data leak prevention).
 
-![Dashboard](./doc/screenshots/dashboard0.png?raw=true "AIL framework dashboard")
+![Overview](https://www.ail-project.org/assets/img/dashboard.jpeg "AIL framework Dashboard")
 
 
 ![Finding webshells with AIL](./doc/screenshots/webshells.gif?raw=true "Finding webshells with AIL")
@@ -43,7 +43,7 @@ resulting in enhanced performance and speed improvements.
 - **Database Upgrade**: The database has been migrated from ARDB to Kvrocks.
 - **New Correlation Engine**: AIL v5.0 introduces a new powerful correlation engine with two new correlation types: CVE and Title.
 - **Enhanced Logging**: The logging system has been improved to provide better troubleshooting capabilities.
-- **Tagging Support**: [AIL objects](./doc/README.md#ail-objects) now support tagging, 
+- **Tagging Support**: [AIL objects](./doc/README.md#ail_objects) now support tagging, 
 allowing users to categorize and label extracted information for easier analysis and organization.
 - **Trackers**: Improved objects filtering, PGP and decoded tracking added.
 - **UI Content Visualization**: The user interface has been upgraded to visualize extracted and tracked information.
@@ -54,6 +54,8 @@ Allow easy creation and customization by extending an abstract class.
 - **New Object CVE and Title**: Extract an correlate CVE IDs and web page titles.
 
 ## Features
+
+![Internal](./doc/screenshots/ail-internal.png?raw=true "AIL framework Internal")
 
 - Modular architecture to handle streams of unstructured or structured information
 - Default support for external ZMQ feeds, such as provided by CIRCL or other providers
@@ -87,6 +89,20 @@ Allow easy creation and customization by extending an abstract class.
 - Tor hidden services is part of the standard framework, all the AIL modules are available to the crawled hidden services
 - Crawler scheduler to trigger crawling on demand or at regular intervals for URLs or Tor hidden services
 
+### Trackers:
+Trackers are user-defined rules or patterns that automatically detect, tag and notify about relevant information collected by AIL.
+
+Trackers types: [Documentation](/doc/README.md#trackers)
+- word or set of words
+- YARA rules
+- Regex
+- Typo Squatting
+
+![tracker-create](./doc/screenshots/tracker_create.png "AIL framework create tracker")
+
+![tracker-yara](./doc/screenshots/tracker_yara.png "AIL framework Yara tracker")
+
+![retro-hunt](./doc/screenshots/retro_hunt.png "AIL framework Retro Hunt")
 
 ## Installation
 
@@ -94,6 +110,7 @@ To install the AIL framework, run the following commands:
 ```bash
 # Clone the repo first
 git clone https://github.com/ail-project/ail-framework.git
+git submodule update --init --recursive
 cd ail-framework
 
 # For Debian and Ubuntu based distributions
@@ -108,11 +125,11 @@ cd bin/
 The default [installing_deps.sh](./installing_deps.sh) is for Debian and Ubuntu based distributions.
 
 Requirement:
-- Python 3.7+
+- Python 3.8+
 
-## Installation Notes
+### Installation Notes
 
-For Lacus Crawler installation instructions, refer to the [HOWTO](https://github.com/ail-project/ail-framework/blob/master/HOWTO.md#crawler)
+For Lacus Crawler and LibreTranslate installation instructions (if you want to use those features), refer to the [HOWTO](https://github.com/ail-project/ail-framework/blob/master/HOWTO.md#crawler)
 
 ## Starting AIL
 
@@ -122,7 +139,6 @@ To start AIL, use the following commands:
 cd bin/
 ./LAUNCH.sh -l
 ```
-
 You can access the AIL framework web interface at the following URL: 
 
 ```
@@ -135,6 +151,9 @@ The default credentials for the web interface are located in the ``DEFAULT_PASSW
 
 CIRCL organises training on how to use or extend the AIL framework. AIL training materials are available at [https://github.com/ail-project/ail-training](https://github.com/ail-project/ail-training).
 
+## Documentation
+
+The documentation is available in [doc/README.md](doc/README.md)
 
 ## API
 
@@ -166,7 +185,6 @@ If you use or reference AIL in an academic paper, you can cite it using the foll
 ~~~~
 
 ## Screenshots
-
 
 ### Websites, Forums and Tor Hidden-Services
 
@@ -207,22 +225,16 @@ If you use or reference AIL in an academic paper, you can cite it using the foll
 
 ### Trackers
 
-![tracker-create](./doc/screenshots/tracker_create.png?raw=true "AIL framework create tracker")
-
-![tracker-yara](./doc/screenshots/tracker_yara.png?raw=true "AIL framework Yara tracker")
-
-![retro-hunt](./doc/screenshots/retro_hunt.png?raw=true "AIL framework Retro Hunt")
-
 ## License
 
 ```
     Copyright (C) 2014 Jules Debra
     Copyright (c) 2021 Olivier Sagit
-    Copyright (C) 2014-2023 CIRCL - Computer Incident Response Center Luxembourg (c/o smile, security made in Lëtzebuerg, Groupement d'Intérêt Economique)
-    Copyright (c) 2014-2023 Raphaël Vinot
-    Copyright (c) 2014-2023 Alexandre Dulaunoy
-    Copyright (c) 2016-2023 Sami Mokaddem
-    Copyright (c) 2018-2023 Thirion Aurélien
+    Copyright (C) 2014-2024 CIRCL - Computer Incident Response Center Luxembourg (c/o smile, security made in Lëtzebuerg, Groupement d'Intérêt Economique)
+    Copyright (c) 2014-2024 Raphaël Vinot
+    Copyright (c) 2014-2024 Alexandre Dulaunoy
+    Copyright (c) 2016-2024 Sami Mokaddem
+    Copyright (c) 2018-2024 Thirion Aurélien
 
     This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU Affero General Public License as published by

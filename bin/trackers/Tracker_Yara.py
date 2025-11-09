@@ -44,14 +44,13 @@ class Tracker_Yara(AbstractModule):
         self.exporters = {'mail': MailExporterTracker(),
                           'webhook': WebHookExporterTracker()}
 
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     def compute(self, message):
         # refresh YARA list
         if self.last_refresh < Tracker.get_tracker_last_updated_by_type('yara'):
             self.rules = Tracker.get_tracked_yara_rules()
             self.last_refresh = time.time()
-            self.redis_logger.debug('Tracked set refreshed')
             print('Tracked set refreshed')
 
         self.obj = self.get_obj()
@@ -62,16 +61,16 @@ class Tracker_Yara(AbstractModule):
             return None
 
         content = self.obj.get_content(r_type='bytes')
+        if not content:
+            return None
 
         try:
             yara_match = self.rules[obj_type].match(data=content, callback=self.yara_rules_match,
                                                     which_callbacks=yara.CALLBACK_MATCHES, timeout=60)
             if yara_match:
-                self.redis_logger.warning(f'tracker yara: new match {self.obj.get_id()}: {yara_match}')
-                print(f'{self.obj.get_id()}: {yara_match}')
+                print(f'{self.obj.get_global_id()}: {yara_match}')
         except yara.TimeoutError:
             print(f'{self.obj.get_id()}: yara scanning timed out')
-            self.redis_logger.info(f'{self.obj.get_id()}: yara scanning timed out')
 
     def convert_byte_offset_to_string(self, b_content, offset):
         byte_chunk = b_content[:offset + 1]
@@ -141,15 +140,25 @@ class Tracker_Yara(AbstractModule):
                 else:
                     self.obj.add_tag(tag)
 
-            # Mails
-            if tracker.mail_export():
-                if not matches:
-                    matches = self.extract_matches(data)
-                self.exporters['mail'].export(tracker, self.obj, matches)
+            # Notification Export
+            if tracker.mail_export() or tracker.webhook_export():
+                filter_notifications = False
 
-            # Webhook
-            if tracker.webhook_export():
-                self.exporters['webhook'].export(tracker, self.obj)
+                if tracker.is_duplicate_notification_filtering_enabled():
+                    content = self.obj.get_content(r_type='bytes')
+                    filter_notifications = tracker.is_duplicate_content(content)
+
+                if not filter_notifications:
+                    if not matches:
+                        matches = self.extract_matches(data)
+
+                    # Mails
+                    if tracker.mail_export():
+                        self.exporters['mail'].export(tracker, self.obj, matches)
+
+                    # Webhook
+                    if tracker.webhook_export():
+                        self.exporters['webhook'].export(tracker, self.obj, matches)
 
         return yara.CALLBACK_CONTINUE
 

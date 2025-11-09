@@ -10,7 +10,7 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from lib.ConfigLoader import ConfigLoader
-from lib import Users
+from lib import ail_users
 
 config_loader = ConfigLoader()
 r_cache = config_loader.get_redis_conn("Redis_Cache")
@@ -21,10 +21,14 @@ def check_token_format(token, search=re.compile(r'[^a-zA-Z0-9_-]').search): ####
     return not bool(search(token))
 
 def is_valid_token(token):
-    return Users.exists_token(token)
+    return ail_users.exists_token(token)
 
 def get_user_from_token(token):
-    return Users.get_token_user(token)
+    return ail_users.get_token_user(token)
+
+def get_basic_user_meta(token):
+    user_id = get_user_from_token(token)
+    return ail_users.get_user_org(user_id), user_id, ail_users.get_user_role(user_id)
 
 def is_user_in_role(role, token):   # verify_user_role
     # User without API
@@ -33,7 +37,7 @@ def is_user_in_role(role, token):   # verify_user_role
 
     user_id = get_user_from_token(token)
     if user_id:
-        return Users.is_in_role(user_id, role)
+        return ail_users.is_in_role(user_id, role)
     else:
         return False
 
@@ -73,6 +77,7 @@ def authenticate_user(token, ip_address):
             return {'status': 'error', 'reason': 'Malformed Authentication String'}, 400
 
         if is_valid_token(token):
+            ail_users.update_user_last_seen_api(get_user_from_token(token))
             return True, 200
         # Failed Login
         else:

@@ -3,7 +3,7 @@ pylacus
 pymisp>=2.4.144
 d4-pyclient>=0.1.6
 
-thehive4py
+thehive4py<2.0
 git+https://github.com/MISP/PyTaxonomies
 git+https://github.com/MISP/PyMISPGalaxies
 
@@ -11,6 +11,7 @@ git+https://github.com/MISP/PyMISPGalaxies
 redis>4.4.4
 python-magic>0.4.15
 yara-python>4.0.2
+pyfaup-rs
 
 # AIL Sync
 websockets>9.0
@@ -25,9 +26,6 @@ xxhash>3.1.0
 zmq
 pyzmq>19.0.0
 
-# Logging
-logbook
-pubsublogger
 
 # Tokeniser
 nltk>3.4.5
@@ -37,13 +35,17 @@ textblob>=0.15.3
 html2text>=2020.1.16
 beautifulsoup4>4.8.2
 
-#Crawler
+# Crawler
 scrapy>2.0.0
 scrapy-splash>=0.7.2
 
 # Languages
 gcld3
 libretranslatepy
+git+https://github.com/ail-project/LexiLang
+
+# Demoji
+git+https://github.com/ail-project/demoji
 
 #Graph
 numpy>1.18.1
@@ -62,10 +64,10 @@ pybgpranking
 DomainClassifier
 
 # Indexer
-whoosh>=2.7.4
+meilisearch
 
 # LibInjection bindings
-pylibinjection>=0.2.4
+#pylibinjection>=0.2.4
 
 #Others
 phonenumbers>8.12.1
@@ -73,10 +75,20 @@ phonenumbers>8.12.1
 # Web
 flask>=2.3.3
 flask-login
+flask-sock
 bcrypt>3.1.6
+pyotp
+segno
 
 # Ail typo squatting
 ail_typo_squatting
+
+# OCR
+easyocr
+
+# Qrcode
+qreader
+pyzbar
 
 # Tests
 nose2>=0.12.0
@@ -85,10 +97,12 @@ coverage>=5.5
 # # # #
 PySocks>=1.7.1
 pycountry>=20.7.3
-https://github.com/saffsd/langid.py/archive/master.zip
 
+idna
+publicsuffixlist
 requests
 
+chardet
 
 ##### Old packages
 # texttable

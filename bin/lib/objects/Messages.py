@@ -26,6 +26,7 @@ from flask import url_for
 
 config_loader = ConfigLoader()
 r_cache = config_loader.get_redis_conn("Redis_Cache")
+r_obj = config_loader.get_db_conn("Kvrocks_DB")
 r_object = config_loader.get_db_conn("Kvrocks_Objects")
 # r_content = config_loader.get_db_conn("Kvrocks_Content")
 baseurl = config_loader.get_config_str("Notifications", "ail_domain")
@@ -71,6 +72,14 @@ class Message(AbstractObject):
     def get_basename(self):
         return os.path.basename(self.id)
 
+    def get_chat_instance(self):
+        c_id = self.id.split('/')
+        return c_id[0]
+
+    def get_protocol(self):
+        chat_instance = self.get_chat_instance()
+        return r_obj.hget(f'chatSerIns:{chat_instance}', 'protocol')
+
     def get_content(self, r_type='str'): # TODO ADD cache # TODO Compress content ???????
         """
         Returns content
@@ -85,11 +94,16 @@ class Message(AbstractObject):
         if r_type == 'str':
             return content
         elif r_type == 'bytes':
-            return content.encode()
+            if content:
+                return content.encode()
 
     def get_date(self):
         timestamp = self.get_timestamp()
-        return datetime.fromtimestamp(float(timestamp)).strftime('%Y%m%d')
+        return datetime.utcfromtimestamp(float(timestamp)).strftime('%Y%m%d')
+
+    def get_last_full_date(self):
+        timestamp = datetime.utcfromtimestamp(float(self.get_timestamp()))
+        return timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
     def get_timestamp(self):
         dirs = self.id.split('/')
@@ -102,9 +116,28 @@ class Message(AbstractObject):
         return message_id
 
     def get_chat_id(self):  # TODO optimize -> use me to tag Chat
-        chat_id = self.get_basename().rsplit('_', 1)[0]
-        return chat_id
+        c_id = self.id.split('/')
+        return c_id[2]
 
+    def get_chat(self):
+        c_id = self.id.split('/')
+        return f'chat:{c_id[0]}:{c_id[2]}'
+
+    def get_subchannel(self):
+        subchannel = self.get_correlation('chat-subchannel')
+        if subchannel.get('chat-subchannel'):
+            return f'chat-subchannel:{subchannel["chat-subchannel"].pop()}'
+        else:
+            return None
+
+    def get_current_thread(self):
+        subchannel = self.get_correlation('chat-thread')
+        if subchannel.get('chat-thread'):
+            return f'chat-thread:{subchannel["chat-thread"].pop()}'
+        else:
+            return None
+
+    # children thread
     def get_thread(self):
         for child in self.get_childrens():
             obj_type, obj_subtype, obj_id = child.split(':', 2)
@@ -116,22 +149,41 @@ class Message(AbstractObject):
     # TODO get channel ID
     # TODO get thread  ID
 
+    def _get_image_ocr(self, obj_id):
+        return bool(self.get_correlation('ocr').get('ocr'))
+
     def get_images(self):
         images = []
         for child in self.get_childrens():
             obj_type, _, obj_id = child.split(':', 2)
             if obj_type == 'image':
-                images.append(obj_id)
+                image_description = self._get_obj_field('image', None, obj_id, 'desc:qwen2.5vl')
+                if image_description:
+                    image_description = image_description.replace("`", ' ')
+                images.append({'id': obj_id, 'ocr': self._get_image_ocr(obj_id), 'description': image_description})
         return images
+
+    def get_barcodes(self):
+        barcodes = []
+        for c in self.get_correlation('barcode').get('barcode', []):
+            barcodes.append(c[1:])
+        return barcodes
+
+    def get_qrcodes(self):
+        qrcodes = []
+        for c in self.get_correlation('qrcode').get('qrcode', []):
+            qrcodes.append(c[1:])
+        return qrcodes
 
     def get_user_account(self, meta=False):
         user_account = self.get_correlation('user-account')
         if user_account.get('user-account'):
             user_account = f'user-account:{user_account["user-account"].pop()}'
             if meta:
-                _, user_account_subtype, user_account_id = user_account.split(':', 3)
+                _, user_account_subtype, user_account_id = user_account.split(':', 2)
                 user_account = UsersAccount.UserAccount(user_account_id, user_account_subtype).get_meta(options={'icon', 'username', 'username_meta'})
-        return user_account
+            return user_account
+        return None
 
     def get_files_names(self):
         names = []
@@ -140,6 +192,29 @@ class Message(AbstractObject):
             for name in filenames:
                 names.append(name[1:])
         return names
+
+    def get_nb_files(self):
+        return self.get_nb_correlation('item')
+
+    def get_files(self, file_names=None):
+        if not file_names:
+            file_names = self.get_files_names()
+        files = {}
+        nb_files = 0
+        s_files = set()
+        for file_name in file_names:
+            for it in self.get_correlation_iter('file-name', '', file_name, 'item'):
+                if file_name not in files:
+                    files[file_name] = []
+                files[file_name].append({'obj': it[1:], 'tags': self.get_obj_tags('item', '', it[1:])})
+                s_files.add(it[1:])
+                nb_files += 1
+        if nb_files < self.get_nb_files():
+            files['undefined'] = []
+            for f in self.get_correlation('item').get('item'):
+                if f[1:] not in s_files:
+                    files['undefined'].append({'obj': f[1:], 'tags': self.get_obj_tags('item', '', f[1:])})
+        return files
 
     def get_reactions(self):
         return r_object.hgetall(f'meta:reactions:{self.type}::{self.id}')
@@ -175,30 +250,20 @@ class Message(AbstractObject):
     # message media
     # flag is deleted -> event or missing from feeder pass ???
 
-    def get_translation(self, content=None, source=None, target='fr'):
-        """
-        Returns translated content
-        """
+    def get_language(self):
+        languages = self.get_languages()
+        if languages:
+            return languages.pop()
+        else:
+            return None
 
-        # return self._get_field('translated')
+    def get_search_document(self):
         global_id = self.get_global_id()
-        translation = r_cache.get(f'translation:{target}:{global_id}')
-        r_cache.expire(f'translation:{target}:{global_id}', 0)
-        if translation:
-            return translation
-        if not content:
-            content = self.get_content()
-        translation = Language.LanguageTranslator().translate(content, source=source, target=target)
-        if translation:
-            r_cache.set(f'translation:{target}:{global_id}', translation)
-            r_cache.expire(f'translation:{target}:{global_id}', 300)
-        return translation
-
-    def _set_translation(self, translation):
-        """
-        Set translated content
-        """
-        return self._set_field('translated', translation)  # translation by hash ??? -> avoid translating multiple time
+        content = self.get_content()
+        if content:
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content}
+        else:
+            return None
 
     # def get_ail_2_ail_payload(self):
     #     payload = {'raw': self.get_gzip_content(b64=True)}
@@ -236,7 +301,7 @@ class Message(AbstractObject):
     #     return r_object.hget(f'meta:item::{self.id}', 'url')
 
     # options: set of optional meta fields
-    def get_meta(self, options=None, timestamp=None, translation_target=''):
+    def get_meta(self, options=set(), timestamp=None, translation_target=''):
         """
         :type options: set
         :type timestamp: float
@@ -244,21 +309,27 @@ class Message(AbstractObject):
         if options is None:
             options = set()
         meta = self.get_default_meta(tags=True)
+        # original_id
+        meta['_id'] = self.id.rsplit('/', 1)[-1]
 
         # timestamp
         if not timestamp:
             timestamp = self.get_timestamp()
         else:
             timestamp = float(timestamp)
-        timestamp = datetime.fromtimestamp(float(timestamp))
-        meta['date'] = timestamp.strftime('%Y/%m/%d')
+        timestamp = datetime.utcfromtimestamp(float(timestamp))
+        meta['date'] = timestamp.strftime('%Y-%m-%d')
         meta['hour'] = timestamp.strftime('%H:%M:%S')
         meta['full_date'] = timestamp.isoformat(' ')
+        if 'last_full_date' in options:
+            meta['last_full_date'] = meta['full_date']
 
-        meta['source'] = self.get_source()
+        # meta['source'] = self.get_source()
         # optional meta fields
         if 'content' in options:
             meta['content'] = self.get_content()
+        if 'protocol':
+            meta['protocol'] = self.get_protocol()
         if 'parent' in options:
             meta['parent'] = self.get_parent()
             if meta['parent'] and 'parent_meta' in options:
@@ -266,7 +337,13 @@ class Message(AbstractObject):
                 parent_type, _, parent_id = meta['parent'].split(':', 3)
                 if parent_type == 'message':
                     message = Message(parent_id)
+                    if 'content' not in options:
+                        options.add('content')
                     meta['reply_to'] = message.get_meta(options=options, translation_target=translation_target)
+        if 'forwarded_from' in options:
+            fwd_from = self.get_first_relationship('forwarded_from', 'chat')
+            if fwd_from:
+                meta['forwarded_from'] = fwd_from['id']
         if 'investigations' in options:
             meta['investigations'] = self.get_investigations()
         if 'link' in options:
@@ -277,6 +354,8 @@ class Message(AbstractObject):
             meta['user-account'] = self.get_user_account(meta=True)
             if not meta['user-account']:
                 meta['user-account'] = {'id': 'UNKNOWN'}
+        if 'container' in options:
+            meta['container'] = self.get_container()
         if 'chat' in options:
             meta['chat'] = self.get_chat_id()
         if 'thread' in options:
@@ -285,12 +364,27 @@ class Message(AbstractObject):
                 meta['thread'] = thread
         if 'images' in options:
             meta['images'] = self.get_images()
+        if 'barcodes' in options:
+            meta['barcodes'] = self.get_barcodes()
+        if 'qrcodes' in options:
+            meta['qrcodes'] = self.get_qrcodes()
         if 'files-names' in options:
             meta['files-names'] = self.get_files_names()
+        if 'files' in options:
+            if meta.get('files-names'):
+                meta['files'] = self.get_files(file_names=meta['files-names'])
         if 'reactions' in options:
             meta['reactions'] = self.get_reactions()
+        if 'language' in options:
+            meta['language'] = self.get_language()
         if 'translation' in options and translation_target:
-            meta['translation'] = self.translate(content=meta.get('content'), target=translation_target)
+            if meta.get('language'):
+                source = meta['language']
+            else:
+                source = None
+            meta['translation'] = self.translate(content=meta.get('content'), source=source, target=translation_target)
+            if 'language' in options:
+                meta['language'] = self.get_language()
 
         # meta['encoding'] = None
         return meta
@@ -301,14 +395,46 @@ class Message(AbstractObject):
     #         content = self.get_content()
     #     translated = argostranslate.translate.translate(content, 'ru', 'en')
     #     # Save translation
-    #     self._set_translation(translated)
     #     return translated
 
-    def create(self, content, translation=None, tags=[]):
+    ## Language ##
+
+    def get_root_obj(self):
+        return self.get_objs_container(root=True).pop()
+
+    def get_container(self):
+        thread = self.get_current_thread()
+        if thread:
+            return thread
+        subchannel = self.get_subchannel()
+        if subchannel:
+            return subchannel
+        return self.get_chat()
+
+    def get_objs_container(self, root=False):
+        objs_containers = set()
+        # chat
+        objs_containers.add(self.get_chat())
+        if not root:
+            subchannel = self.get_subchannel()
+            if subchannel:
+                objs_containers.add(subchannel)
+            thread = self.get_current_thread()
+            if thread:
+                objs_containers.add(thread)
+            user_account = self.get_user_account()
+            if user_account:
+                objs_containers.add(user_account)
+        return objs_containers
+
+    #- Language -#
+
+    def create(self, content, language=None, translation=None, tags=[]):
         self._set_field('content', content)
-        # r_content.get(f'content:{self.type}:{self.get_subtype(r_str=True)}:{self.id}', content)
-        if translation:
-            self._set_translation(translation)
+        if not language and content:
+            language = self.detect_language()
+        if translation and content:
+            self.set_translation(language, translation)
         for tag in tags:
             self.add_tag(tag)
 
@@ -339,8 +465,36 @@ def create(obj_id, content, translation=None, tags=[]):
     message.create(content, translation=translation, tags=tags)
     return message
 
-
 # TODO Encode translation
+
+
+#####################################
+
+# class Messages:
+#     def __init__(self):
+#         super().__init__('message', Message)
+#
+#     def get_name(self):
+#         return 'Messages'
+#
+#     def get_icon(self):
+#         return {'fas': 'fas', 'icon': 'comment-dots'}
+#
+#     def get_link(self, flask_context=False):
+#         # if flask_context:
+#         #     url = url_for('chats_explorer.chats_explorer_protocols')
+#         # else:
+#         #     url = f'{baseurl}/chats/explorer/protocols'
+#         return None
+#
+#     # def get_by_date(self, date):
+#     #     pass
+#
+#     def get_nb_by_date(self, date):
+#         nb = 0
+#         for subtype in self.get_subtypes():
+#             nb += self.get_nb_by_date_subtype(subtype, date)
+#         return nb
 
 
 if __name__ == '__main__':

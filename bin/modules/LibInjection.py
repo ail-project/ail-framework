@@ -15,8 +15,6 @@ import os
 import sys
 import pylibinjection
 
-from datetime import datetime
-from pyfaup.faup import Faup
 from urllib.parse import unquote
 
 
@@ -25,6 +23,7 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from modules.abstract_module import AbstractModule
+from lib import psl_faup
 
 class LibInjection(AbstractModule):
     """docstring for LibInjection module."""
@@ -32,16 +31,12 @@ class LibInjection(AbstractModule):
     def __init__(self):
         super(LibInjection, self).__init__()
 
-        self.faup = Faup()
-
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     def compute(self, message):
-        item = self.get_obj()
         url = message
 
-        self.faup.decode(url)
-        url_parsed = self.faup.get()
+        url_parsed = psl_faup.unparse_url(url)
         # # TODO: # FIXME: remove me
         try:
             resource_path = url_parsed['resource_path'].encode()
@@ -66,12 +61,9 @@ class LibInjection(AbstractModule):
             # print(f'query is sqli : {result_query}')
 
         if result_path['sqli'] is True or result_query['sqli'] is True:
-            item_id = item.get_id()
-            print(f"Detected (libinjection) SQL in URL: {item_id}")
-            print(unquote(url))
 
-            to_print = f'LibInjection;{item.get_source()};{item.get_date()};{item.get_basename()};Detected SQL in URL;{item_id}'
-            self.redis_logger.warning(to_print)
+            self.logger.info(f'Detected SQL in URL;{self.obj.get_global_id()}')
+            print(unquote(url))
 
             # Add tag
             tag = 'infoleak:automatic-detection="sql-injection"'

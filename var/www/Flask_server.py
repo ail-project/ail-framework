@@ -6,38 +6,44 @@ import sys
 import ssl
 import json
 import time
-import uuid
 import random
 import logging
 import logging.config
 
 from flask import Flask, render_template, jsonify, request, Request, Response, session, redirect, url_for
 from flask_login import LoginManager, current_user, login_user, logout_user, login_required
-
-import importlib
-from os.path import join
-
-sys.path.append('./modules/')
+from flask_sock import Sock
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
 from lib.ConfigLoader import ConfigLoader
-from lib.Users import User
+from lib.ail_users import AILUser, get_session_user
 from lib import Tag
+from lib import ail_core
 from lib import ail_logger
+from lib import ail_stats
+from lib import passivedns
+from lib.objects import SSHKeys
+
+from packages.git_status import clear_git_meta_cache
 
 # Import config
 import Flask_config
 
 # Import Blueprint
 from blueprints.root import root
+from blueprints.dashboard import dashboard
+from blueprints.ui_submit import PasteSubmit  #  TODO RENAME ME
 from blueprints.crawler_splash import crawler_splash
 from blueprints.correlation import correlation
+from blueprints.languages_ui import languages_ui
 from blueprints.tags_ui import tags_ui
 from blueprints.import_export import import_export
 from blueprints.investigations_b import investigations_b
+from blueprints.search_b import search_b
 from blueprints.objects_item import objects_item
 from blueprints.hunters import hunters
 from blueprints.old_endpoints import old_endpoints
@@ -47,12 +53,21 @@ from blueprints.objects_cve import objects_cve
 from blueprints.objects_decoded import objects_decoded
 from blueprints.objects_subtypes import objects_subtypes
 from blueprints.objects_title import objects_title
+from blueprints.objects_mail import objects_mail
+from blueprints.objects_gtracker import objects_gtracker
 from blueprints.objects_cookie_name import objects_cookie_name
 from blueprints.objects_etag import objects_etag
 from blueprints.objects_hhhash import objects_hhhash
+from blueprints.objects_dom_hash import objects_dom_hash
 from blueprints.chats_explorer import chats_explorer
 from blueprints.objects_image import objects_image
+from blueprints.objects_ocr import objects_ocr
+from blueprints.objects_barcode import objects_barcode
+from blueprints.objects_qrcode import objects_qrcode
 from blueprints.objects_favicon import objects_favicon
+from blueprints.objects_file_name import objects_file_name
+from blueprints.objects_ssh import objects_ssh
+from blueprints.objects_ip import objects_ip
 from blueprints.api_rest import api_rest
 
 
@@ -79,14 +94,38 @@ log_dir = os.path.join(os.environ['AIL_HOME'], 'logs')
 if not os.path.isdir(log_dir):
     os.makedirs(log_dir)
 
-logging.config.dictConfig(ail_logger.get_config(name='flask'))
+# ========= LOGS =========#
 
-# =========       =========#
+access_logger = ail_logger.get_access_config(create=True)
+
+class FilterLogErrors(logging.Filter):
+    def filter(self, record):
+        # print(dict(record.__dict__))
+        if record.levelname == 'ERROR':
+            if record.msg.startswith('Error on request:'):
+                if 'ssl.SSLEOFError: EOF occurred in violation of protocol' in record.msg:
+                    return False
+        return True
+
+
+logging.config.dictConfig(ail_logger.get_config(name='flask'))
+flask_logger = logging.getLogger()
+ignore_filter = FilterLogErrors()
+for handler in flask_logger.handlers:
+    handler.addFilter(ignore_filter)
+
 
 # =========  TLS  =========#
-ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
-ssl_context.load_cert_chain(certfile=os.path.join(Flask_dir, 'server.crt'), keyfile=os.path.join(Flask_dir, 'server.key'))
-# print(ssl_context.get_ciphers())
+
+ssl_context = None
+self_signed_certfile = os.path.join(Flask_dir, 'server.crt')
+self_signed_keyfile = os.path.join(Flask_dir, 'server.key')
+
+if os.path.exists(self_signed_certfile) and os.path.exists(self_signed_keyfile):
+    ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    ssl_context.load_cert_chain(certfile=self_signed_certfile, keyfile=self_signed_keyfile)
+    ssl_context.suppress_ragged_eofs = True
+    # print(ssl_context.get_ciphers())
 # =========       =========#
 
 Flask_config.app = Flask(__name__, static_url_path=baseUrl+'/static/')
@@ -95,8 +134,11 @@ app.config['MAX_CONTENT_LENGTH'] = 900 * 1024 * 1024
 
 # =========  BLUEPRINT  =========#
 app.register_blueprint(root, url_prefix=baseUrl)
+app.register_blueprint(dashboard, url_prefix=baseUrl)
+app.register_blueprint(PasteSubmit, url_prefix=baseUrl)
 app.register_blueprint(crawler_splash, url_prefix=baseUrl)
 app.register_blueprint(correlation, url_prefix=baseUrl)
+app.register_blueprint(languages_ui, url_prefix=baseUrl)
 app.register_blueprint(tags_ui, url_prefix=baseUrl)
 app.register_blueprint(import_export, url_prefix=baseUrl)
 app.register_blueprint(investigations_b, url_prefix=baseUrl)
@@ -109,18 +151,28 @@ app.register_blueprint(objects_cve, url_prefix=baseUrl)
 app.register_blueprint(objects_decoded, url_prefix=baseUrl)
 app.register_blueprint(objects_subtypes, url_prefix=baseUrl)
 app.register_blueprint(objects_title, url_prefix=baseUrl)
+app.register_blueprint(objects_mail, url_prefix=baseUrl)
+app.register_blueprint(objects_gtracker, url_prefix=baseUrl)
 app.register_blueprint(objects_cookie_name, url_prefix=baseUrl)
 app.register_blueprint(objects_etag, url_prefix=baseUrl)
 app.register_blueprint(objects_hhhash, url_prefix=baseUrl)
+app.register_blueprint(objects_dom_hash, url_prefix=baseUrl)
 app.register_blueprint(chats_explorer, url_prefix=baseUrl)
 app.register_blueprint(objects_image, url_prefix=baseUrl)
+app.register_blueprint(objects_ocr, url_prefix=baseUrl)
+app.register_blueprint(objects_barcode, url_prefix=baseUrl)
+app.register_blueprint(objects_qrcode, url_prefix=baseUrl)
 app.register_blueprint(objects_favicon, url_prefix=baseUrl)
+app.register_blueprint(objects_file_name, url_prefix=baseUrl)
+app.register_blueprint(objects_ssh, url_prefix=baseUrl)
+app.register_blueprint(objects_ip, url_prefix=baseUrl)
+app.register_blueprint(search_b, url_prefix=baseUrl)
 app.register_blueprint(api_rest, url_prefix=baseUrl)
 
 # =========       =========#
 
 # ========= Cookie name ========
-app.config.update(SESSION_COOKIE_NAME='ail_framework_{}'.format(uuid.uuid4().int))
+app.config.update(SESSION_COOKIE_NAME='ail_framework_{}'.format(ail_core.get_ail_uuid_int()))
 
 # ========= session ========
 app.secret_key = str(random.getrandbits(256))
@@ -131,72 +183,25 @@ login_manager.init_app(app)
 # ========= LOGIN MANAGER ========
 
 @login_manager.user_loader
-def load_user(user_id):
-    return User.get(user_id)
+def load_user(session_id):
+    # print(session)
+    user_id = get_session_user(session_id)
+    if user_id:
+        user = AILUser.get(user_id)
+        # print(user)
+        return user
+    return None
 
-# ========= HEADER GENERATION ======== DEPRECATED
-
-
-# Get headers items that should be ignored (not displayed)
-toIgnoreModule = set()
-try:
-    with open('templates/ignored_modules.txt', 'r') as f:
-        lines = f.read().splitlines()
-        for line in lines:
-            toIgnoreModule.add(line)
-
-except IOError:
-    pass
-
-# Dynamically import routes and functions from modules
-# Also, prepare header.html
-to_add_to_header_dico = {}
-for root, dirs, files in os.walk(os.path.join(Flask_dir, 'modules')):
-    sys.path.append(join(root))
-
-    # Ignore the module
-    curr_dir = root.split('/')[1]
-    if curr_dir in toIgnoreModule:
-        continue
-
-    for name in files:
-        module_name = root.split('/')[-2]
-        if name.startswith('Flask_') and name.endswith('.py'):
-            if name == 'Flask_config.py':
-                continue
-            name = name.strip('.py')
-            importlib.import_module(name)
-        elif name == 'header_{}.html'.format(module_name):
-            with open(join(root, name), 'r') as f:
-                to_add_to_header_dico[module_name] = f.read()
-
-# create header.html
-with open(os.path.join(Flask_dir, 'templates', 'header_base.html'), 'r') as f:
-    complete_header = f.read()
-modified_header = complete_header
-
-# Add the header in the supplied order
-for module_name, txt in list(to_add_to_header_dico.items()):
-    to_replace = '<!--{}-->'.format(module_name)
-    if to_replace in complete_header:
-        modified_header = modified_header.replace(to_replace, txt)
-        del to_add_to_header_dico[module_name]
-
-# Add the header for no-supplied order
-to_add_to_header = []
-for module_name, txt in to_add_to_header_dico.items():
-    to_add_to_header.append(txt)
-
-modified_header = modified_header.replace('<!--insert here-->', '\n'.join(to_add_to_header))
-
-# Write the header.html file
-with open(os.path.join(Flask_dir, 'templates', 'header.html'), 'w') as f:
-    f.write(modified_header)
 
 # ========= JINJA2 FUNCTIONS ========
 def list_len(s):
     return len(s)
+
+
 app.jinja_env.filters['list_len'] = list_len
+
+# ========= PROXY ========
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1)
 
 
 # ========= CACHE CONTROL ========
@@ -210,6 +215,13 @@ def add_header(response):
     if 'Cache-Control' not in response.headers:
         response.headers['Cache-Control'] = 'private, max-age=0'
     return response
+
+# ========== USERS ============
+@app.before_request
+def before_request():
+    if current_user.is_authenticated:
+        current_user.update_last_seen()
+
 
 # ========== ROUTES ============
 
@@ -238,6 +250,14 @@ def _handle_client_error(e):
     else:
         return e
 
+@app.errorhandler(403)
+def error_page_not_found(e):
+    if request.path.startswith('/api/'): ## # TODO: add baseUrl
+        return Response(json.dumps({"status": "error", "reason": "403 Access Denied"}) + '\n', mimetype='application/json'), 403
+    else:
+        # avoid endpoint enumeration
+        return page_forbidden(e)
+
 @app.errorhandler(404)
 def error_page_not_found(e):
     if request.path.startswith('/api/'): ## # TODO: add baseUrl
@@ -251,12 +271,48 @@ def _handle_client_error(e):
     if request.path.startswith('/api/'):
         return Response(json.dumps({"status": "error", "reason": "Server Error"}) + '\n', mimetype='application/json'), 500
     else:
+        if current_user:
+            flask_logger.warning(f'User: {current_user.get_user_id()}')
         return e
+
+@login_required
+def page_forbidden(e):
+    return render_template("error/403.html"), 403
 
 @login_required
 def page_not_found(e):
     # avoid endpoint enumeration
     return render_template('error/404.html'), 404
+
+
+# ========== WEBSOCKET ============
+
+app.config['SOCK_SERVER_OPTIONS'] = {'ping_interval': 25}
+sock = Sock(app)
+
+@login_required
+@sock.route('/ws/dashboard')
+def ws_dashboard(ws):
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    next_feeders = ail_stats.get_next_feeder_timestamp(int(time.time())) + 1
+    try:
+        while True:
+            # TODO CHECK IF NEEDED
+            # if ws.closed:
+            #     print('WebSocket connection closed')
+            #     break
+            if int(time.time()) >= next_feeders:
+                feeders = ail_stats.get_feeders_dashboard()
+                objs = ail_stats.get_nb_objs_today()
+                tags = ail_stats.get_tagged_objs_dashboard()
+                trackers = ail_stats.get_tracked_objs_dashboard(user_org, user_id)
+                crawler = ail_stats.get_crawlers_stats()
+                ws.send(json.dumps({'feeders': feeders, 'objs': objs, 'crawler': crawler, 'tags': tags, 'trackers': trackers}))
+                next_feeders = next_feeders + 30
+            time.sleep(1)
+    except Exception as e:  # ConnectionClosed ?
+        print("WEBSOCKET", e)
 
 
 # ========== INITIAL taxonomies ============
@@ -265,8 +321,18 @@ default_taxonomies = ["infoleak", "gdpr", "fpf", "dark-web"]
 for taxonomy in default_taxonomies:
     Tag.enable_taxonomy_tags(taxonomy)
 
-# rrrr = [str(p) for p in app.url_map.iter_rules()]
-# for p in rrrr:
+# ========== GIT Cache ============
+clear_git_meta_cache()
+
+# Passive SSH
+if not SSHKeys.get_passive_ssh_url():
+    SSHKeys.set_default_passive_ssh()
+# Passive DNS
+if not passivedns.get_passive_dns_url():
+    passivedns.set_default_passive_dns()
+
+# r = [str(p) for p in app.url_map.iter_rules()]
+# for p in r:
 #     print(p)
 
 # ============ MAIN ============

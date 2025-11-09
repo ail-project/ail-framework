@@ -8,12 +8,12 @@ function getSyncScriptParams() {
          var lastScript = scripts[scripts.length-1];
          var scriptName = lastScript;
          return {
-             urlstuff : scriptName.getAttribute('data-urlstuff'),
+             //urlstuff : scriptName.getAttribute('data-urlstuff'),
              urllog : scriptName.getAttribute('data-urllog')
          };
 }
 
-var urlstuff = getSyncScriptParams().urlstuff;
+//var urlstuff = getSyncScriptParams().urlstuff;
 var urllog = getSyncScriptParams().urllog;
 
 //If we do not received info from mixer, set pastes_num to 0
@@ -26,7 +26,6 @@ function checkIfReceivedData(){
         } else {
             if ((new Date().getTime() - time_since_last_pastes_num["Proc"+list_feeder[i]]) > 35*1000){
                 window.paste_num_tabvar_all["Proc"+list_feeder[i]] = 0;
-                window.paste_num_tabvar_all["Dup"+list_feeder[i]] = 0;
             }
         }
     }
@@ -34,17 +33,17 @@ function checkIfReceivedData(){
 }
 
 
-function initfunc( csvay, scroot) {
-    window.csv = csvay;
-    window.scroot = scroot;
-};
+// function initfunc( csvay, scroot) {
+//     window.csv = csvay;
+//     window.scroot = scroot;
+// };
 
-function update_values() {
-    $.getJSON(urlstuff,
-        function(data) {
-            window.glob_tabvar = data;
-    });
-}
+// function update_values() {
+//     $.getJSON(urlstuff,
+//         function(data) {
+//             window.glob_tabvar = data;
+//     });
+// }
 
 
 // Plot and update the number of processed pastes
@@ -129,10 +128,10 @@ function update_processed_pastes(graph, dataset, graph_type) {
 
 // END PROCESSED PASTES
 
-function initfunc( csvay, scroot) {
-  window.csv = csvay;
-  window.scroot = scroot;
-};
+// function initfunc( csvay, scroot) {
+//   window.csv = csvay;
+//   window.scroot = scroot;
+// };
 
 var source = new EventSource(urllog);
 
@@ -140,12 +139,17 @@ source.onmessage = function(event) {
     var feed = JSON.parse( event.data );
     create_log_table(feed);
 };
+source.onerror = function(event) {
+    console.error('EventSource failed:', event);
+    source.close();
+};
 
 function pad_2(number) {
     return (number < 10 ? '0' : '') + number;
 }
 
 function create_log_table(obj_json) {
+    //console.log("create_log_table")
     tableBody = document.getElementById("tab_body")
     var tr = document.createElement('TR')
     var time = document.createElement('TD')
@@ -178,10 +182,8 @@ function create_log_table(obj_json) {
                 data_for_processed_paste["global"] = Array(totalPoints+1).join(0).split('');
 
                 var feederProc = $.plot("#Proc_feeder", [ getData(feeder, "Proc") ], options_processed_pastes);
-                var feederDup = $.plot("#Dup_feeder", [ getData(feeder, "Dup") ], options_processed_pastes);
 
                 update_processed_pastes(feederProc, "feeder", "Proc");
-                update_processed_pastes(feederDup, "feeder", "Dup");
                 update_processed_pastes(total_proc, "global");
                 setTimeout(checkIfReceivedData, 45*1000);
             }
@@ -191,10 +193,8 @@ function create_log_table(obj_json) {
             if (list_feeder.indexOf(feeder) == -1) {
                 list_feeder.push(feeder);
                 data_for_processed_paste["Proc"+feeder] = Array(totalPoints+1).join(0).split('');
-                data_for_processed_paste["Dup"+feeder] = Array(totalPoints+1).join(0).split('');
             }
 
-            var feederName = msg_type == "Duplicated" ? "Dup"+feeder : "Proc"+feeder;
             window.paste_num_tabvar_all[feederName] = paste_processed;
             time_since_last_pastes_num[feederName] = new Date().getTime();
         }
@@ -212,18 +212,18 @@ function create_log_table(obj_json) {
           tr.className = "table-danger"
       }
 
-      source_link = document.createElement("A");
-      if (parsedmess[1] == "slexy.org"){
-          source_url = "http://"+parsedmess[1]+"/view/"+parsedmess[3].split(".")[0];
-      }
-      else{
-          source_url = "http://"+parsedmess[1]+"/"+parsedmess[3].split(".")[0];
-      }
-      source_link.setAttribute("HREF",source_url);
-      source_link.setAttribute("TARGET", "_blank");
-      source_link.appendChild(document.createTextNode(parsedmess[1]));
+      // source_link = document.createElement("A");
+      // if (parsedmess[1] == "slexy.org"){
+      //     source_url = "http://"+parsedmess[1]+"/view/"+parsedmess[3].split(".")[0];
+      // }
+      // else{
+      //     source_url = "http://"+parsedmess[1]+"/"+parsedmess[3].split(".")[0];
+      // }
+      // source_link.setAttribute("HREF",source_url);
+      // src.appendChild(source_link);
 
-      src.appendChild(source_link);
+      src.appendChild(document.createTextNode(parsedmess[1]));
+
 
       var now = new Date();
       var timepaste = pad_2(now.getHours()) + ":" + pad_2(now.getMinutes()) + ":" + pad_2(now.getSeconds());
@@ -250,8 +250,10 @@ function create_log_table(obj_json) {
 
       msage.appendChild(document.createTextNode(message.join(" ")));
 
+      // console.log(parsedmess)
+
       var paste_path = parsedmess[5];
-      var url_to_saved_paste = url_showSavedPath+"?id="+paste_path;
+      var url_to_saved_paste = url_showSavedPath+"?gid="+paste_path;
 
       var action_icon_a = document.createElement("A");
       action_icon_a.setAttribute("TARGET", "_blank");
@@ -292,7 +294,8 @@ function create_log_table(obj_json) {
     }
 }
 
-function create_queue_table() {
+/*
+function create_queue_table(data) {
     document.getElementById("queueing").innerHTML = "";
     var Tablediv = document.getElementById("queueing")
     var table = document.createElement('TABLE')
@@ -319,7 +322,7 @@ function create_queue_table() {
         tr.appendChild(th);
     }
 
-    if ((glob_tabvar.row1).length == 0) {
+    if ((data).length == 0) {
         var tr = document.createElement('TR');
         var td = document.createElement('TD');
         var td2 = document.createElement('TD');
@@ -332,25 +335,25 @@ function create_queue_table() {
         tableBody.appendChild(tr);
     }
     else {
-        for(i = 0; i < (glob_tabvar.row1).length;i++){
+        for(i = 0; i < (data).length;i++){
             var tr = document.createElement('TR')
             for(j = 0; j < 2; j++){
                 var td = document.createElement('TD')
-                var moduleNum = j == 0 ? "." + glob_tabvar.row1[i][3] : "";
-                td.appendChild(document.createTextNode(glob_tabvar.row1[i][j] + moduleNum));
+                var moduleNum = j == 0 ? "." + data[i][3] : "";
+                td.appendChild(document.createTextNode(data[i][j] + moduleNum));
                 tr.appendChild(td)
             }
             // Used to decide the color of the row
-            // We have glob_tabvar.row1[][j] with:
+            // We have data[][j] with:
             // - j=0: ModuleName
             // - j=1: queueLength
             // - j=2: LastProcessedPasteTime
             // - j=3: Number of the module belonging in the same category
-            if (glob_tabvar.row1[i][3]==="Not Launched")
+            if (data[i][3]==="Not Launched")
                 tr.className += " bg-danger text-white";
-            else if (parseInt(glob_tabvar.row1[i][2]) > window.threshold_stucked_module && parseInt(glob_tabvar.row1[i][1]) > 2)
+            else if (parseInt(data[i][2]) > window.threshold_stucked_module && parseInt(data[i][1]) > 2)
                 tr.className += " table-danger";
-            else if (parseInt(glob_tabvar.row1[i][1]) === 0)
+            else if (parseInt(data[i][1]) === 0)
                 tr.className += " table-disabled";
             else
                 tr.className += " table-success";
@@ -358,9 +361,9 @@ function create_queue_table() {
         }
     }
     Tablediv.appendChild(table);
-}
+}*/
 
-
+/*
 function load_queues() {
     var data = [];
     var data2 = [];
@@ -427,7 +430,7 @@ function load_queues() {
     var interval = 1000;   //number of mili seconds between each call
     var refresh = function() {
 
-        $.ajax({
+        $.ajax({ ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////
             url: "",
             cache: false,
             success: function(html) {
@@ -485,16 +488,18 @@ function load_queues() {
 
     refresh();
 }
+*/
 
-function manage_undefined() {
-    if (typeof glob_tabvar == "undefined")
-        setTimeout(function() { if (typeof glob_tabvar == "undefined") { manage_undefined(); } else { load_queues(); } }, 1000);
-    else if (typeof glob_tabvar.row1 == "undefined")
-        setTimeout(function() { if (typeof glob_tabvar.row1 == "undefined") { manage_undefined(); } else { load_queues(); } }, 1000);
-    else
-        load_queues();
-}
+// function manage_undefined() {
+//     if (typeof glob_tabvar == "undefined")
+//         setTimeout(function() { if (typeof glob_tabvar == "undefined") { manage_undefined(); } else { /*load_queues();*/ } }, 1000);
+//     else if (typeof glob_tabvar.row1 == "undefined")
+//         setTimeout(function() { if (typeof glob_tabvar.row1 == "undefined") { manage_undefined(); } else { load_queues(); } }, 1000);
+//     else
+//         load_queues();
+// }
 
-$(document).ready(function () {
-    manage_undefined();
-});
+
+// $(document).ready(function () {
+//     manage_undefined();
+// });

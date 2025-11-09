@@ -42,12 +42,11 @@ class Retro_Hunt_Module(AbstractModule):
         self.obj = None
         self.tags = []
 
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     # # TODO:   # start_time
     #           # end_time
     def compute(self, task_uuid):
-        self.redis_logger.warning(f'{self.module_name}, starting Retro hunt task {task_uuid}')
         print(f'starting Retro hunt task {task_uuid}')
         self.progress = 0
         # First launch
@@ -58,7 +57,7 @@ class Retro_Hunt_Module(AbstractModule):
         timeout = self.retro_hunt.get_timeout()
         self.tags = self.retro_hunt.get_tags()
 
-        self.redis_logger.debug(f'{self.module_name}, Retro Hunt rule {task_uuid} timeout {timeout}')
+        self.logger.debug(f'{self.module_name}, Retro Hunt rule {task_uuid} timeout {timeout}')
 
         # Filters
         filters = self.retro_hunt.get_filters()
@@ -73,6 +72,8 @@ class Retro_Hunt_Module(AbstractModule):
         last_obj = self.retro_hunt.get_last_analyzed()
         if last_obj:
             last_obj_type, last_obj_subtype, last_obj_id = last_obj.split(':', 2)
+            if last_obj_subtype is None:
+                last_obj_subtype = ''
         else:
             last_obj_type = None
             last_obj_subtype = None
@@ -81,13 +82,17 @@ class Retro_Hunt_Module(AbstractModule):
         self.nb_done = 0
         self.update_progress()
 
+        if last_obj_type:
+            filters['start'] = {'type': last_obj_type, 'subtype': last_obj_subtype, 'id': last_obj_id}
+
         for obj_type in filters:
-            if last_obj_type:
-                filters['start'] = f'{last_obj_subtype}:{last_obj_id}'
-                last_obj_type = None
-            for obj in ail_objects.obj_iterator(obj_type, filters):
+            for obj in ail_objects.obj_iterator(obj_type, filters[obj_type]):
+                print(obj.get_id())
                 self.obj = obj
                 content = obj.get_content(r_type='bytes')
+                if not content:
+                    continue
+
                 rule.match(data=content, callback=self.yara_rules_match,
                            which_callbacks=yara.CALLBACK_MATCHES, timeout=timeout)
 
@@ -108,7 +113,6 @@ class Retro_Hunt_Module(AbstractModule):
         # Completed
         self.retro_hunt.complete()
         print(f'Retro Hunt {task_uuid} completed')
-        self.redis_logger.warning(f'{self.module_name}, Retro Hunt {task_uuid} completed')
 
     def update_progress(self):
         if self.nb_objs == 0:
@@ -125,7 +129,6 @@ class Retro_Hunt_Module(AbstractModule):
         # print(data)
         task_uuid = data['namespace']
 
-        self.redis_logger.info(f'{self.module_name}, Retro hunt {task_uuid} match found:    {obj_id}')
         print(f'Retro hunt {task_uuid} match found:   {self.obj.get_type()} {obj_id}')
 
         self.retro_hunt.add(self.obj.get_type(), self.obj.get_subtype(r_str=True), obj_id)
@@ -136,8 +139,7 @@ class Retro_Hunt_Module(AbstractModule):
         # Tags
         if self.obj.get_type() == 'item':
             for tag in self.tags:
-                msg = f'{tag};{obj_id}'
-                self.add_message_to_queue(msg, 'Tags')
+                self.add_message_to_queue(obj=self.obj, message=tag, queue='Tags')
         else:
             for tag in self.tags:
                 self.obj.add_tag(tag)
@@ -156,16 +158,15 @@ class Retro_Hunt_Module(AbstractModule):
             task_uuid = Tracker.get_retro_hunt_task_to_start()
             if task_uuid:
                 # Module processing with the message from the queue
-                self.redis_logger.debug(task_uuid)
+                self.logger.debug(task_uuid)
                 # try:
                 self.compute(task_uuid)
                 # except Exception as err:
-                #         self.redis_logger.error(f'Error in module {self.module_name}: {err}')
+                #         self.logger.error(f'Error in module {self.module_name}: {err}')
                 #         # Remove uuid ref
                 #         self.remove_submit_uuid(uuid)
             else:
                 # Wait before next process
-                self.redis_logger.debug(f'{self.module_name}, waiting for new message, Idling {self.pending_seconds}s')
                 time.sleep(self.pending_seconds)
 
 

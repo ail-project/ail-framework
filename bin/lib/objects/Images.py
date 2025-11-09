@@ -2,6 +2,7 @@
 # -*-coding:UTF-8 -*
 
 import base64
+import magic
 import os
 import sys
 
@@ -17,10 +18,13 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib.ConfigLoader import ConfigLoader
 from lib.objects.abstract_daterange_object import AbstractDaterangeObject, AbstractDaterangeObjects
+from lib.ail_core import get_default_image_description_model
 
 config_loader = ConfigLoader()
+# r_cache = config_loader.get_redis_conn("Redis_Cache")
 r_serv_metadata = config_loader.get_db_conn("Kvrocks_Objects")
 IMAGE_FOLDER = config_loader.get_files_directory('images')
+baseurl = config_loader.get_config_str("Notifications", "ail_domain")
 config_loader = None
 
 
@@ -50,7 +54,7 @@ class Image(AbstractDaterangeObject):
         if flask_context:
             url = url_for('correlation.show_correlation', type=self.type, id=self.id)
         else:
-            url = f'{baseurl}/correlation/show?type={self.type}&id={self.id}'
+            url = f'/correlation/show?type={self.type}&id={self.id}'
         return url
 
     def get_svg_icon(self):
@@ -64,14 +68,54 @@ class Image(AbstractDaterangeObject):
         filename = os.path.join(IMAGE_FOLDER, self.get_rel_path())
         return os.path.realpath(filename)
 
+    def is_gif(self, filepath=None):
+        if not filepath:
+            filepath = self.get_filepath()
+        mime = magic.from_file(filepath, mime=True)
+        if mime == 'image/gif':
+            return True
+        return False
+
     def get_file_content(self):
         filepath = self.get_filepath()
         with open(filepath, 'rb') as f:
             file_content = BytesIO(f.read())
         return file_content
 
+    def get_base64(self):
+        return base64.b64encode(self.get_file_content().read()).decode()
+
     def get_content(self, r_type='str'):
-        return self.get_file_content()
+        if r_type == 'str':
+            return None
+        else:
+            return self.get_file_content()
+
+    def get_description_models(self):
+        models = []
+        for key in self._get_fields_keys():
+            if key.startswith('desc:'):
+                model = key[5:]
+                models.append(model)
+
+    def add_description_model(self, model, description):
+        self._set_field(f'desc:{model}', description)
+
+    def get_description(self, model=None):
+        if model is None:
+            model = get_default_image_description_model()
+        description = self._get_field(f'desc:{model}')
+        if description:
+            description = description.replace("`", ' ')
+        return description
+
+    def get_search_document(self):
+        global_id = self.get_global_id()
+        content = self.get_description()
+        if content:
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content}
+        else:
+            return None
 
     def get_misp_object(self):
         obj_attrs = []
@@ -84,13 +128,15 @@ class Image(AbstractDaterangeObject):
                 obj_attr.add_tag(tag)
         return obj
 
-    def get_meta(self, options=set()):
-        meta = self._get_meta(options=options)
+    def get_meta(self, options=set(), flask_context=False):
+        meta = self._get_meta(options=options, flask_context=flask_context)
         meta['id'] = self.id
         meta['img'] = self.id
         meta['tags'] = self.get_tags(r_list=True)
         if 'content' in options:
             meta['content'] = self.get_content()
+        if 'description' in options:
+            meta['description'] = self.get_description()
         if 'tags_safe' in options:
             meta['tags_safe'] = self.is_tags_safe(meta['tags'])
         return meta
@@ -105,6 +151,20 @@ class Image(AbstractDaterangeObject):
 
 def get_screenshot_dir():
     return IMAGE_FOLDER
+
+def get_all_images():
+    images = []
+    for root, dirs, files in os.walk(get_screenshot_dir()):
+        for file in files:
+            path = f'{root}{file}'
+            image_id = path.replace(IMAGE_FOLDER, '').replace('/', '')
+            images.append(image_id)
+    return images
+
+
+def get_all_images_objects(filters={}):
+    for image_id in get_all_images():
+        yield Image(image_id)
 
 
 def create(content, size_limit=5000000, b64=False, force=False):
@@ -126,10 +186,24 @@ class Images(AbstractDaterangeObjects):
     def __init__(self):
         super().__init__('image', Image)
 
+    def get_name(self):
+        return 'Images'
+
+    def get_icon(self):
+        return {'fas': 'fas', 'icon': 'image'}
+
+    def get_link(self, flask_context=False):
+        if flask_context:
+            url = url_for('objects_image.objects_images')
+        else:
+            url = f'{baseurl}/objects/images'
+        return url
+
     def sanitize_id_to_search(self, name_to_search):
         return name_to_search  # TODO
 
 
 # if __name__ == '__main__':
+#     print(json.dumps(get_all_images()))
 #     name_to_search = '29ba'
 #     print(search_screenshots_by_name(name_to_search))

@@ -13,7 +13,7 @@ from flask import Flask, render_template, jsonify, request, Blueprint, redirect,
 from flask_login import login_required, current_user
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only
+from Role_Manager import login_admin, login_user, login_read_only
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -22,6 +22,7 @@ sys.path.append(os.environ['AIL_BIN'])
 from  lib.ail_core import paginate_iterator
 from lib.objects import Titles
 from packages import Date
+from lib import search_engine
 
 # ============ BLUEPRINT ============
 objects_title = Blueprint('objects_title', __name__, template_folder=os.path.join(os.environ['AIL_FLASK'], 'templates/objects/title'))
@@ -34,7 +35,7 @@ def create_json_response(data, status_code):
     return Response(json.dumps(data, indent=2, sort_keys=True), mimetype='application/json'), status_code
 
 # ============= ROUTES ==============
-@objects_title.route("/objects/title", methods=['GET'])
+@objects_title.route("/objects/titles", methods=['GET'])
 @login_required
 @login_read_only
 def objects_titles():
@@ -75,7 +76,7 @@ def objects_title_range_json():
 
 @objects_title.route("/objects/title/search_post", methods=['POST'])
 @login_required
-@login_analyst
+@login_user
 def objects_title_search_post():
     to_search = request.form.get('to_search')
     search_type = request.form.get('search_type', 'id')
@@ -92,11 +93,14 @@ def objects_title_search_post():
 
 @objects_title.route("/objects/title/search", methods=['GET'])
 @login_required
-@login_analyst
+@login_user
 def objects_title_search():
+    user_id = current_user.get_user_id()
     to_search = request.args.get('search')
     type_to_search = request.args.get('search_type', 'id')
-    case_sensitive = request.args.get('case_sensitive')
+    case_sensitive = request.args.get('case_sensitive', False)
+    if case_sensitive == 'False':
+        case_sensitive = False
     case_sensitive = bool(case_sensitive)
     page = request.args.get('page', 1)
     try:
@@ -117,6 +121,7 @@ def objects_title_search():
             search_result = titles.search_by_id(to_search, r_pos=True, case_sensitive=case_sensitive)
     elif type_to_search == 'content':
         search_result = titles.search_by_content(to_search, r_pos=True, case_sensitive=case_sensitive)
+        search_engine.log(user_id, 'title', to_search)
     else:
         return create_json_response({'error': 'Unknown search type'}, 400)
 

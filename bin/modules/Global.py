@@ -31,14 +31,13 @@ import sys
 import time
 
 from hashlib import md5
-from uuid import uuid4
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
 from modules.abstract_module import AbstractModule
-from lib.ail_core import get_ail_uuid
+from lib.ail_core import get_objects_tracked
 from lib.ConfigLoader import ConfigLoader
 from lib.data_retention_engine import update_obj_date
 from lib.objects.Items import Item
@@ -74,17 +73,15 @@ class Global(AbstractModule):
         if int(difftime) > 30:
             to_print = f'Global; ; ; ;glob Processed {self.processed_item} item(s) in {difftime} s'
             print(to_print)
-            self.redis_logger.debug(to_print)
 
             self.time_last_stats = time.time()
             self.processed_item = 0
 
     def compute(self, message, r_result=False): # TODO move OBJ ID sanitization to importer
         # Recovering the streamed message infos
-        gzip64encoded = message
 
         if self.obj.type == 'item':
-            if gzip64encoded:
+            if message:
 
                 # Creating the full filepath
                 filename = os.path.join(self.ITEMS_FOLDER, self.obj.id)
@@ -97,7 +94,7 @@ class Global(AbstractModule):
 
                 else:
                     # Decode compressed base64
-                    decoded = base64.standard_b64decode(gzip64encoded)
+                    decoded = base64.standard_b64decode(message)
                     new_file_content = self.gunzip_bytes_obj(filename, decoded)
 
                     # TODO REWRITE ME
@@ -128,14 +125,25 @@ class Global(AbstractModule):
                                 return self.obj.id
 
             else:
-                self.logger.info(f"Empty Item: {message} not processed")
-        elif self.obj.type == 'message':
-            # TODO send to specific object queue => image, ...
+                if self.obj.exists():
+                    self.add_message_to_queue(obj=self.obj, queue='Item')
+                    self.processed_item += 1
+                else:
+                    self.logger.info(f"Empty Item: {message} not processed")
+
+        elif self.obj.type == 'message' or self.obj.type == 'ocr':
             self.add_message_to_queue(obj=self.obj, queue='Item')
         elif self.obj.type == 'image':
-            self.add_message_to_queue(obj=self.obj, queue='Image')
+            self.add_message_to_queue(obj=self.obj, queue='Image', message=message)
+            self.add_message_to_queue(obj=self.obj, queue='Images', message=message)
+        elif self.obj.type == 'title':
+            self.add_message_to_queue(obj=self.obj, queue='Titles', message=message)
         else:
             self.logger.critical(f"Empty obj: {self.obj} {message} not processed")
+
+        # Trackers
+        if self.obj.type in get_objects_tracked():
+            self.add_message_to_queue(obj=self.obj, queue='Trackers')
 
     def check_filename(self, filename, new_file_content):
         """
@@ -218,8 +226,6 @@ class Global(AbstractModule):
                 gunzipped_bytes_obj = fo.read()
         except Exception as e:
             self.logger.warning(f'Global; Invalid Gzip file: {filename}, {e}')
-            print(f'Global; Invalid Gzip file: {filename}, {e}')
-
         return gunzipped_bytes_obj
 
     def rreplace(self, s, old, new, occurrence):

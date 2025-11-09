@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+	<title>"Chats Monitoring Requests - AIL-Framework</title>
+	<link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png')}}">
+	<!-- Core CSS -->
+	<link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/ail-project.css') }}" />
+	<link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet">
+
+	<!-- JS -->
+	<script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/popper.min.js')}}"></script>
+  <script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+  <script src="{{ url_for('static', filename='js/jquery.dataTables.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js')}}"></script>
+
+</head>
+
+<body>
+
+	{% include 'nav_bar.html' %}
+
+	<div class="container-fluid">
+		<div class="row">
+
+			{% include 'sidebars/sidebar_objects.html' %}
+
+			<div class="col-12 col-lg-10" id="core_content">
+
+                <h3>Chats Monitoring Requests:</h3>
+
+                <table id="table_investigation" class="table table-striped border-primary">
+                    <thead class="bg-dark text-white">
+                    <tr>
+                        <th>Date</th>
+                        <th>Creator</th>
+                        <th>Type</th>
+                        <th>Username</th>
+                        <th>Invite</th>
+                        <th>Description</th>
+                        <th>Status</th>
+                        <th></th>
+                    </tr>
+                    </thead>
+                    <tbody style="font-size: 15px;">
+                    {% for meta in metas %}
+                        <tr class="border-color: blue;">
+{#                            <td>{% if meta['status'] == 'imported' %}<i class="text-success fa-solid fa-check-to-slot"></i>{% elif meta['status'] == 'rejected' %}<i class="text-danger fa-solid fa-xmark"></i>{% else %}<i class="text-secondary fa-regular fa-envelope-open"></i>{% endif %}</td>#}
+                            <td>{{ meta['date'] }}</td>
+                            <td>{{ meta['creator'] }}</td>
+                            <td>{{ meta['chat_type'] }}</td>
+                            <td>{% if meta['username'] %}{{ meta['username'] }}{% endif %}</td>
+                            <td>{% if meta['invite'] %}{{ meta['invite'] }}{% endif %}</td>
+                            <td>{% if meta['description'] %}{{ meta['description'] }}{% endif %}</td>
+                            <td>
+                                {% if meta['status'] == 'done' %}
+                                    <i class="text-success fa-solid fa-check-to-slot"></i>
+                                {% elif meta['status'] == 'rejected' %}
+                                    <i class="text-danger fa-solid fa-xmark"></i>
+                                {% endif %}
+                            </td>
+                            <td class="text-center">
+                                {% if not meta['status'] %}
+                                    <a class="btn btn-sm btn-primary" href="{{ url_for('chats_explorer.chat_monitoring_request_done', uuid=meta['uuid'])}}"><i class="fa-solid fa-check-to-slot"></i> Done</a>
+                                    <a class="btn btn-sm btn-danger" href="{{ url_for('chats_explorer.chat_monitoring_request_reject', uuid=meta['uuid'])}}"><i class="fa-solid fa-xmark"></i> Reject</a>
+                                {% endif %}
+                                <a class="btn btn-sm btn-outline-danger" href="{{ url_for('chats_explorer.chat_monitoring_request_delete', uuid=meta['uuid'])}}"><i class="fa-solid fa-trash-alt"></i></a>
+{#                                <i class="fa-solid fa-boxes-packing"></i>#}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+
+
+			</div>
+
+		</div>
+	</div>
+
+</body>
+
+<script>
+$(document).ready(function(){
+	$('#nav_investigation').removeClass("text-muted");
+	$("#nav_add_investigation").addClass("active");
+
+});
+
+$('#table_investigation').DataTable({
+        "aLengthMenu": [[5, 10, 15, -1], [5, 10, 15, "All"]],
+        "iDisplayLength": 10,
+        "order": [[ 0, "desc" ]]
+  });
+
+</script>

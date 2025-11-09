@@ -46,7 +46,7 @@ class FileName(AbstractDaterangeObject):
         return url
 
     def get_svg_icon(self):
-        return {'style': 'far', 'icon': '\uf249', 'color': '#36F5D5', 'radius': 5}
+        return {'style': 'far', 'icon': '\uf15b', 'color': '#36F5D5', 'radius': 5}
 
     def get_misp_object(self):
         obj_attrs = []
@@ -83,6 +83,19 @@ class FilesNames(AbstractDaterangeObjects):
     """
     def __init__(self):
         super().__init__('file-name', FileName)
+
+    def get_name(self):
+        return 'File-Names'
+
+    def get_icon(self):
+        return {'fa': 'far', 'icon': 'file'}
+
+    def get_link(self, flask_context=False):
+        if flask_context:
+            url = url_for('objects_file_name.objects_files_names')
+        else:
+            url = f'{baseurl}/objects/file-names'
+        return url
 
     def sanitize_id_to_search(self, name_to_search):
         return name_to_search

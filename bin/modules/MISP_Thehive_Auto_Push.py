@@ -18,7 +18,6 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from modules.abstract_module import AbstractModule
 from lib.exceptions import MISPConnectionError
-from lib.objects.Items import Item
 from lib import Tag
 from exporter.MISPExporter import MISPExporterAutoDaily
 from exporter.TheHiveExporter import TheHiveExporterAlertTag
@@ -43,7 +42,7 @@ class MISP_Thehive_Auto_Push(AbstractModule):
         if self.last_refresh < Tag.get_last_auto_push_refreshed() < 0:
             self.tags = Tag.refresh_auto_push()
             self.last_refresh = time.time()
-            self.redis_logger.info('Tags Auto Push refreshed')
+            self.logger.debug('Tags Auto Push refreshed')
 
         tag = message
         item = self.get_obj()
@@ -57,7 +56,7 @@ class MISP_Thehive_Auto_Push(AbstractModule):
                     Tag.set_auto_push_status('misp', 'ConnectionError')
                 else:
                     Tag.set_auto_push_status('misp', '')
-                    self.logger.info('MISP Pushed:', tag, '->', item_id)
+                    self.logger.info(f'MISP Pushed: {tag} -> {item_id}')
 
         if 'thehive' in self.tags:
             if tag in self.tags['thehive']:
@@ -68,7 +67,7 @@ class MISP_Thehive_Auto_Push(AbstractModule):
                     Tag.set_auto_push_status('thehive', 'Request Entity Too Large')
                 else:
                     Tag.set_auto_push_status('thehive', '')
-                    self.logger.info('thehive Pushed:', tag, '->', item_id)
+                    self.logger.info(f'thehive Pushed: {tag} -> {item_id}')
 
 
 if __name__ == "__main__":

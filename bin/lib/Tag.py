@@ -28,12 +28,20 @@ r_tags = config_loader.get_db_conn("Kvrocks_Tags")
 r_cache = config_loader.get_redis_conn("Redis_Cache")
 config_loader = None
 
+TAGS_TO_EXCLUDE_FROM_DASHBOARD = {'infoleak:submission="crawler"', 'infoleak:submission="manual"'}
+
 #### CORE FUNCTIONS ####
 
 # # # # UNSAFE TAGS # # # #
 
+# set of unsafe tags
+UNSAFE_TAGS = None
+
 def build_unsafe_tags():
     tags = set()
+    # violence
+    tags.add('dark-web:topic="violence"')
+    tags.add('dark-web:topic="pornography-illicit-or-illegal"')
     # CE content
     tags.add('dark-web:topic="pornography-child-exploitation"')
     # add copine-scale tags
@@ -52,11 +60,16 @@ def is_tags_safe(ltags):
     :return: is a tag in the set unsafe
     :rtype: boolean
     """
-    return unsafe_tags.isdisjoint(ltags)
+    global UNSAFE_TAGS
+    if UNSAFE_TAGS is None:
+        UNSAFE_TAGS = build_unsafe_tags()
+    return UNSAFE_TAGS.isdisjoint(ltags)
 
-
-# set of unsafe tags
-unsafe_tags = build_unsafe_tags()
+def is_tag_safe(tag):
+    global UNSAFE_TAGS
+    if UNSAFE_TAGS is None:
+        UNSAFE_TAGS = build_unsafe_tags()
+    return tag not in UNSAFE_TAGS
 
 # - - - UNSAFE TAGS - - - #
 
@@ -80,16 +93,15 @@ def get_obj_by_tag(key_tag):
 
 #### Taxonomies ####
 
-TAXONOMIES = {}
+TAXONOMIES = None
 def load_taxonomies():
     global TAXONOMIES
     manifest = os.path.join(os.environ['AIL_HOME'], 'files/misp-taxonomies/MANIFEST.json')
     TAXONOMIES = Taxonomies(manifest_path=manifest)
 
-
-load_taxonomies()
-
 def get_taxonomies():
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.keys()
 
 # TODO rename me to get enabled_taxonomies
@@ -111,12 +123,18 @@ def disable_taxonomy(taxonomy):
     r_tags.srem('taxonomies:enabled', taxonomy)
 
 def exists_taxonomy(taxonomy):
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.get(taxonomy) is not None
 
 def get_taxonomy_description(taxonomy):
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.get(taxonomy).description
 
 def get_taxonomy_name(taxonomy):
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.get(taxonomy).name
 
 def get_taxonomy_predicates(taxonomy):
@@ -133,12 +151,18 @@ def get_taxonomy_predicates(taxonomy):
     return meta
 
 def get_taxonomy_refs(taxonomy):
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.get(taxonomy).refs
 
 def get_taxonomy_version(taxonomy):
+    if TAXONOMIES is None:
+        load_taxonomies()
     return TAXONOMIES.get(taxonomy).version
 
 def get_taxonomy_tags(taxonomy, enabled=False):
+    if TAXONOMIES is None:
+        load_taxonomies()
     taxonomy_obj = TAXONOMIES.get(taxonomy)
     tags = []
     for p, content in taxonomy_obj.items():
@@ -165,6 +189,8 @@ def get_taxonomy_meta(taxonomy_name, enabled=False, enabled_tags=False, nb_activ
     meta = {}
     if not exists_taxonomy(taxonomy_name):
         return meta
+    if TAXONOMIES is None:
+        load_taxonomies()
     taxonomy = TAXONOMIES.get(taxonomy_name)
     meta['description'] = taxonomy.description
     meta['name'] = taxonomy.name
@@ -241,6 +267,8 @@ def api_update_taxonomy_tag_enabled(data):
     if not exists_taxonomy(taxonomy):
         return {'error': f'taxonomy {taxonomy} not found'}, 404
     tags = data.get('tags', [])
+    if TAXONOMIES is None:
+        load_taxonomies()
     taxonomy_tags = set(TAXONOMIES.get(taxonomy).machinetags())
     for tag in tags:
         if tag not in taxonomy_tags:
@@ -249,6 +277,8 @@ def api_update_taxonomy_tag_enabled(data):
 
 def enable_taxonomy_tags(taxonomy):
     enable_taxonomy(taxonomy)
+    if TAXONOMIES is None:
+        load_taxonomies()
     for tag in TAXONOMIES.get(taxonomy).machinetags():
         add_taxonomy_tag_enabled(taxonomy, tag)
 
@@ -279,9 +309,8 @@ def api_disable_taxonomy_tags(data):
 #
 
 # TODO Synonyms
-
-GALAXIES = {}
-CLUSTERS = {}
+GALAXIES = None
+CLUSTERS = None
 def load_galaxies():
     global GALAXIES
     galaxies = []
@@ -298,11 +327,10 @@ def load_galaxies():
             clusters.append(json.load(f))
     CLUSTERS = Clusters(clusters)
 
-
-# LOAD GALAXY + CLUSTERS
-load_galaxies()
-
 def get_galaxies():
+    if GALAXIES is None:
+        # LOAD GALAXY + CLUSTERS
+        load_galaxies()
     return GALAXIES.keys()
 
 # TODO RENAME ME
@@ -310,9 +338,15 @@ def get_active_galaxies():
     return r_tags.smembers('galaxies:enabled')
 
 def get_galaxy(galaxy_name):
+    if GALAXIES is None:
+        # LOAD GALAXY + CLUSTERS
+        load_galaxies()
     return GALAXIES.get(galaxy_name)
 
 def exists_galaxy(galaxy):
+    if CLUSTERS is None:
+        # LOAD GALAXY + CLUSTERS
+        load_galaxies()
     return CLUSTERS.get(galaxy) is not None
 
 def is_galaxy_enabled(galaxy):
@@ -369,9 +403,15 @@ def get_galaxy_tag_meta(galaxy_type, tag):
 
 
 def get_clusters():
+    if CLUSTERS is None:
+        # LOAD GALAXY + CLUSTERS
+        load_galaxies()
     return CLUSTERS.keys()
 
 def get_cluster(cluster_type):
+    if CLUSTERS is None:
+        # LOAD GALAXY + CLUSTERS
+        load_galaxies()
     return CLUSTERS.get(cluster_type)
 
 def get_galaxy_tags(galaxy_type):
@@ -595,20 +635,29 @@ def _update_tag_first_seen(tag, first_seen, last_seen):
 
 # # TODO:
 def _update_tag_last_seen(tag, first_seen, last_seen):
-    if first_seen == last_seen:
-        if r_tags.scard(f'item::{tag}:{last_seen}') > 0:
-            r_tags.hset(f'tag_metadata:{tag}', 'last_seen', last_seen)
-        # no tag in db
+    update = True
+    while update:
+        if first_seen == last_seen:
+            if r_tags.scard(f'item::{tag}:{last_seen}') > 0:
+                r_tags.hset(f'tag_metadata:{tag}', 'last_seen', last_seen)
+                update = False
+                break
+            # no tag in db
+            else:
+                r_tags.hdel(f'tag_metadata:{tag}', 'first_seen')
+                r_tags.hdel(f'tag_metadata:{tag}', 'last_seen')
+                update = False
+                break
         else:
-            r_tags.hdel(f'tag_metadata:{tag}', 'first_seen')
-            r_tags.hdel(f'tag_metadata:{tag}', 'last_seen')
-    else:
-        if r_tags.scard(f'item::{tag}:{last_seen}') > 0:
-            r_tags.hset(f'tag_metadata:{tag}', 'last_seen', last_seen)
-        else:
-            last_seen = Date.date_substract_day(str(last_seen))
-            if int(last_seen) >= int(first_seen):
-                _update_tag_last_seen(tag, first_seen, last_seen)
+            if r_tags.scard(f'item::{tag}:{last_seen}') > 0:
+                r_tags.hset(f'tag_metadata:{tag}', 'last_seen', last_seen)
+                update = False
+                break
+            else:
+                last_seen = Date.date_substract_day(str(last_seen))
+                if int(last_seen) < int(first_seen):
+                    update = False
+                    break
 
 
 def update_tag_metadata(tag, date, delete=False): # # TODO: delete Tags
@@ -670,7 +719,16 @@ def add_object_tag(tag, obj_type, obj_id, subtype=''):
         else:
             r_tags.sadd(f'{obj_type}:{subtype}:{tag}', obj_id)
 
+        # STATS
         r_tags.hincrby(f'daily_tags:{datetime.date.today().strftime("%Y%m%d")}', tag, 1)
+        mess = f'{int(time.time())}:{obj_type}:{subtype}:{obj_id}'
+        if tag not in TAGS_TO_EXCLUDE_FROM_DASHBOARD:
+            r_tags.lpush('dashboard:tags', mess)
+            r_tags.ltrim('dashboard:tags', 0, 19)
+
+def get_tags_dashboard():
+    return r_tags.lrange('dashboard:tags', 0, -1)
+
 
 # obj -> Object()
 def confirm_tag(tag, obj):
@@ -735,6 +793,16 @@ def delete_object_tags(obj_type, subtype, obj_id):
     for tag in get_object_tags(obj_type, obj_id, subtype=subtype):
         delete_object_tag(tag, obj_type, obj_id, subtype=subtype)
 
+
+def get_objs_by_date(obj_type, tags, date):
+    objs = []
+    if obj_type == 'item' or obj_type == 'message':
+        l_set_keys = get_obj_keys_by_tags(tags, obj_type, date=date)
+        if len(l_set_keys) < 2:
+            objs = get_obj_by_tag(l_set_keys[0])
+        else:
+            objs = r_tags.sinter(l_set_keys[0], *l_set_keys[1:])
+    return objs
 
 ################################################################################################################
 
@@ -1160,6 +1228,20 @@ def get_tags_min_last_seen(l_tags, r_int=False):
     else:
         return str(min_last_seen)
 
+def get_tags_min_first_seen(l_tags, r_int=False):
+    """
+    Get min first seen from a list of tags (current: daterange objs only)
+    """
+    min_first_seen = 99999999
+    for tag in l_tags:
+        first_seen = get_tag_first_seen(tag, r_int=True)
+        if first_seen < min_first_seen:
+            min_first_seen = first_seen
+    if r_int:
+        return min_first_seen
+    else:
+        return str(min_first_seen)
+
 def get_all_tags():
     return list(r_tags.smembers('list_tags'))
 
@@ -1482,6 +1564,24 @@ def refresh_auto_push():
 
 # --- TAG AUTO PUSH --- #
 
+def get_domain_vanity_tags():
+    vanity = {}
+    try:
+        with open(os.path.join(os.environ['AIL_HOME'], 'files/vanity_tags')) as f:
+            ltags = json.load(f)
+            if ltags:
+                for tag in ltags:
+                    if is_taxonomie_tag(tag) or is_galaxy_tag(tag):
+                        for s_vanity in ltags[tag]:
+                            if s_vanity not in vanity:
+                                vanity[s_vanity] = []
+                            vanity[s_vanity].append(tag)
+    except FileNotFoundError:
+        pass
+    except json.decoder.JSONDecodeError:
+        print('Error files/vanity_tags, Invalid JSON')
+    return vanity
+
 ###################################################################################
 ###################################################################################
 ###################################################################################
@@ -1558,14 +1658,14 @@ def get_obj_date(object_type, object_id):
         return None
 
 # API QUERY
-def api_delete_obj_tags(tags=[], object_id=None, object_type="item"):
+def api_delete_obj_tags(tags=[], object_id=None, object_type="item", subtype=''):
     if not object_id:
         return ({'status': 'error', 'reason': 'object id not found'}, 404)
     if not tags:
         return ({'status': 'error', 'reason': 'No Tag(s) specified'}, 400)
 
     for tag in tags:
-        res = delete_object_tag(tag, object_type, object_id, subtype='')
+        res = delete_object_tag(tag, object_type, object_id, subtype=subtype)
         if res:
             return res
 
@@ -1612,6 +1712,7 @@ def _fix_tag_obj_id(date_from):
             if ';' in tag:
                 print(tag)
                 new_tag = tag.split(';')[0]
+                tag = tag.replace('"', '\"')
                 print(new_tag)
                 r_tags.hdel(f'tag_metadata:{tag}', 'first_seen')
                 r_tags.hdel(f'tag_metadata:{tag}', 'last_seen')

@@ -62,20 +62,18 @@ class Tracker_Term(AbstractModule):
         self.exporters = {'mail': MailExporterTracker(),
                           'webhook': WebHookExporterTracker()}
 
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     def compute(self, message):
         # refresh Tracked term
         if self.last_refresh_word < Tracker.get_tracker_last_updated_by_type('word'):
             self.tracked_words = Tracker.get_tracked_words()
             self.last_refresh_word = time.time()
-            self.redis_logger.debug('Tracked word refreshed')
             print('Tracked word refreshed')
 
         if self.last_refresh_set < Tracker.get_tracker_last_updated_by_type('set'):
             self.tracked_sets = Tracker.get_tracked_sets()
             self.last_refresh_set = time.time()
-            self.redis_logger.debug('Tracked set refreshed')
             print('Tracked set refreshed')
 
         obj = self.get_obj()
@@ -85,6 +83,11 @@ class Tracker_Term(AbstractModule):
         if obj_type not in self.tracked_words and obj_type not in self.tracked_sets:
             return None
 
+        # Ensure only string content is processed
+        if self.obj.type == 'decoded':
+            if not self.obj.get_mimetype().startswith('text/'):
+                return None
+
         content = obj.get_content()
 
         signal.alarm(self.max_execution_time)
@@ -93,7 +96,7 @@ class Tracker_Term(AbstractModule):
         try:
             dict_words_freq = Tracker.get_text_word_frequency(content)
         except TimeoutException:
-            self.redis_logger.warning(f"{obj.get_id()} processing timeout")
+            self.logger.warning(f"{self.obj.get_global_id()} processing timeout")
         else:
             signal.alarm(0)
 
@@ -124,8 +127,7 @@ class Tracker_Term(AbstractModule):
             if ail_objects.is_filtered(obj, filters):
                 continue
 
-            print(f'new tracked term {tracker_uuid} found: {tracker_name} in {obj_id}')
-            self.redis_logger.warning(f'new tracked term found: {tracker_name} in {obj_id}')
+            print(f'new tracked term {tracker_uuid} found: {tracker_name} in {self.obj.get_global_id()}')
 
             tracker.add(obj.get_type(), obj.get_subtype(), obj_id)
 
@@ -136,14 +138,22 @@ class Tracker_Term(AbstractModule):
                 else:
                     obj.add_tag(tag)
 
-            # Mail
-            if tracker.mail_export():
-                # TODO add matches + custom subjects
-                self.exporters['mail'].export(tracker, obj)
+            # Notification Export
+            if tracker.mail_export() or tracker.webhook_export():
+                filter_notifications = False
 
-            # Webhook
-            if tracker.webhook_export():
-                self.exporters['webhook'].export(tracker, obj)
+                if tracker.is_duplicate_notification_filtering_enabled():
+                    content = self.obj.get_content(r_type='bytes')
+                    filter_notifications = tracker.is_duplicate_content(content)
+
+                if not filter_notifications:
+                    # Mails
+                    if tracker.mail_export():
+                        self.exporters['mail'].export(tracker, obj)
+
+                    # Webhook
+                    if tracker.webhook_export():
+                        self.exporters['webhook'].export(tracker, obj)
 
 
 if __name__ == '__main__':

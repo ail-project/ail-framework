@@ -26,8 +26,10 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from lib import ail_logger
+from lib import ail_users
 from exporter.abstract_exporter import AbstractExporter
 from lib.ConfigLoader import ConfigLoader
+from exporter import default_mail_template
 # from lib.objects.abstract_object import AbstractObject
 # from lib.Tracker import Tracker
 
@@ -79,9 +81,10 @@ class MailExporter(AbstractExporter, ABC):
 
     def get_smtp_client(self):
         # try:
+        smtp_server = smtplib.SMTP(self.host, self.port)
         if self.pw is not None:
             try:
-                smtp_server = smtplib.SMTP(self.host, self.port)
+                smtp_server.ehlo()
                 smtp_server.starttls()
             except smtplib.SMTPNotSupportedError:
                 self.logger.info(f"The server {self.host}:{self.port} does not support the STARTTLS extension.")
@@ -96,8 +99,6 @@ class MailExporter(AbstractExporter, ABC):
                 smtp_server.login(self.user, self.pw)
             else:
                 smtp_server.login(self.sender, self.pw)
-        else:
-            smtp_server = smtplib.SMTP(self.host, self.port)
         return smtp_server
         # except Exception as err:
         # traceback.print_tb(err.__traceback__)
@@ -133,7 +134,7 @@ class MailExporterTracker(MailExporter):
 
         subject = f'AIL Framework Tracker: {description}'
         body = f"AIL Framework, New occurrence for {tracker_type} tracker: {tracker_name}\n"
-        body += f'Item: {obj.id}\nurl:{obj.get_link()}'
+        body += f'Object {obj.type}: {obj.id}\n'
 
         if matches:
             body += '\n'
@@ -141,10 +142,18 @@ class MailExporterTracker(MailExporter):
             for match in matches:
                 body += f'\nMatch {nb}: {match[0]}\nExtract:\n{match[1]}\n\n'
                 nb += 1
-        else:
-            body = f"AIL Framework, New occurrence for {tracker_type} tracker: {tracker_name}\n"
-            body += f'Item: {obj.id}\nurl:{obj.get_link()}'
 
-        # print(body)
+        ail_link = f'AIL url:{obj.get_link()}\n\n'
         for mail in tracker.get_mails():
+            if ail_users.exists_user(mail):
+                body = ail_link + body
             self._export(mail, subject, body)
+
+class MailExporterUserCreation(MailExporter):
+    def __init__(self, host=None, port=None, password=None, user='', sender=''):
+        super().__init__(host=host, port=port, password=password, user=user, sender=sender)
+
+    def export(self, user_id, password):
+        subject = default_mail_template.default_subject
+        body = default_mail_template.get_default_template(user_id, password)
+        self._export(user_id, subject, body)

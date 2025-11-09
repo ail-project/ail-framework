@@ -17,6 +17,8 @@ import sys
 import time
 import uuid
 
+from multiprocessing import Process as Proc
+
 from enum import IntEnum, unique
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
@@ -24,8 +26,6 @@ from urllib.parse import urlparse, urljoin
 from bs4 import BeautifulSoup
 
 from pylacus import PyLacus
-
-from pyfaup.faup import Faup
 
 # interact with splash_crawler API
 import requests
@@ -37,10 +37,21 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from packages import git_status
 from packages import Date
+from lib import ail_orgs
+from lib.exceptions import OnionFilteringError
 from lib.ConfigLoader import ConfigLoader
-from lib.objects.Domains import Domain
+from lib.regex_helper import regex_findall
+from lib.objects import CookiesNames
+from lib.objects import Domains
+from lib.objects import DomHashs
+from lib.objects import Etags
+from lib.objects import Favicons
 from lib.objects import HHHashs
+from lib.objects import Screenshots
+from lib.objects import Titles
 from lib.objects.Items import Item
+from lib import Tag
+from lib import psl_faup
 
 config_loader = ConfigLoader()
 r_db = config_loader.get_db_conn("Kvrocks_DB")
@@ -50,9 +61,100 @@ r_cache = config_loader.get_redis_conn("Redis_Cache")
 ITEMS_FOLDER = config_loader.get_config_str("Directories", "pastes")
 HAR_DIR = config_loader.get_files_directory('har')
 activate_crawler = config_loader.get_config_str("Crawler", "activate_crawler")
+D_HAR = config_loader.get_config_boolean('Crawler', 'default_har')
+D_SCREENSHOT = config_loader.get_config_boolean('Crawler', 'default_screenshot')
 config_loader = None
 
-faup = Faup()
+# logger_crawler = logging.getLogger('crawlers.log')
+
+# # # # # # # #
+#             #
+#   DOMAINS   #
+#             #
+# # # # # # # #
+
+# is safe ???
+# TODO FILTER URL ???
+
+def api_get_onion_lookup(domain):  # TODO check if object process done ???
+    domain = domain.lower().strip()
+    parts = domain.split('.onion')
+    # if len(parts) > 1:
+    #     for word in [part + '.onion' for part in parts[:-1]] + [parts[-1]]:
+    #         if len(word) >= 32 and word.endswith('.onion'):
+    #             api_get_onion_lookup(word)
+
+    url_unpack = unpack_url(domain)
+    if not url_unpack:
+        return {'error': 'Invalid Domain', 'domain': domain}, 404
+    domain = url_unpack['domain']
+    dom = Domains.Domain(domain)
+    if not is_valid_onion_v3_domain(domain):
+        return {'error': 'Invalid Domain', 'domain': domain}, 404
+    if not dom.exists():
+        if is_crawler_activated():
+            create_task(domain, parent='lookup', priority=0, har=D_HAR, screenshot=D_SCREENSHOT)
+        return {'error': 'domain not found', 'domain': domain}, 404
+    if not dom.was_up():
+        return {'error': 'domain not found', 'domain': domain}, 404
+    # else
+    ## TODO check if object process done -> return result if more than one history
+    #   #-> check item history
+    meta = dom.get_meta(options={'languages'})
+    meta['first_seen'] = meta['first_seen'].replace('/', '-')
+    meta['last_seen'] = meta['last_check'].replace('/', '-')
+    meta['languages'] = list(meta['languages'])
+    tags = []
+    for tag in meta['tags']:
+        if tag.startswith('dark-web:') or tag.startswith('infoleak:'):
+            tags.append(tag)
+    meta['tags'] = tags
+    del meta['domain']
+    del meta['last_check']
+    del meta['type']
+    del meta['status']
+    meta['titles'] = []
+    for h in dom.get_correlation('title').get('title', []):
+        t = Titles.Title(h[1:])
+        meta['titles'].append(t.get_content())
+    return meta
+
+def api_get_domain_from_url(url):
+    url = url.lower()
+    try:
+        url_unpack = unpack_url(url)
+    except AttributeError:
+        return url
+    if url_unpack:
+        return url_unpack['domain']
+    else:
+        return None
+
+## onion correlation cache ##
+
+def is_domain_correlation_cache(domain):
+    return r_cache.sismember('cache:domain:correlation', domain)
+
+def add_domain_correlation_cache(domain, obj_gid):
+    r_cache.sadd('cache:domain:correlation', domain)
+    r_cache.sadd(f'cache:domain:correlation:objs:{domain}', obj_gid)
+
+def save_domain_correlation_cache(is_domain_up, domain):
+    if is_domain_up:
+        dom = Domains.Domain(domain)
+        for obj_gid in r_cache.smembers(f'cache:domain:correlation:objs:{domain}'):
+            obj_type, obj_subtype, obj_id = obj_gid.split(':', 2)
+            if not obj_subtype:
+                obj_subtype = ''
+            dom.add_correlation(obj_type, obj_subtype, obj_id)
+    r_cache.srem('cache:domain:correlation', domain)
+    r_cache.delete(f'cache:domain:correlation:objs:{domain}')
+
+# TODO CHECK ALL TASK IF STORED IN DB
+def cleanup_domain_correlation_cache(domain):
+    pass
+
+# -- #
 
 # # # # # # # #
 #             #
@@ -79,33 +181,77 @@ def get_date_crawled_items_source(date):
 def get_har_dir():
     return HAR_DIR
 
+def is_valid_onion_v3_domain(domain):
+    if len(domain) == 62:  # v3 address
+        return domain[:56].isalnum()
+    return False
+
 def is_valid_onion_domain(domain):
     if not domain.endswith('.onion'):
         return False
-    domain = domain.replace('.onion', '', 1)
-    if len(domain) == 16:  # v2 address
-        r_onion = r'[a-z0-9]{16}'
-        if re.match(r_onion, domain):
-            return True
-    elif len(domain) == 56:  # v3 address
-        r_onion = r'[a-z0-9]{56}'
-        if re.fullmatch(r_onion, domain):
-            return True
-    return False
+    return is_valid_onion_v3_domain(domain)
+    # domain = domain.replace('.onion', '', 1)
+    # if len(domain) == 16:  # v2 address
+    #     r_onion = r'[a-z0-9]{16}'
+    #     if re.match(r_onion, domain):
+    #         return True
+    # elif len(domain) == 56:  # v3 address
+    #     r_onion = r'[a-z0-9]{56}'
+    #     if re.fullmatch(r_onion, domain):
+    #         return True
+    # return False
+
+def get_reserved_i2p_domains():
+    return {'console.i2p', 'mail.i2p', 'proxy.i2p', 'router.i2p'}
+
+def is_valid_i2p_b32_domain(domain):
+    dom = domain[:-8]
+    # Distinguish old from new flavors by length. Old b32 addresses are always {52 chars}.b32.i2p.
+    # New ones are {56+ chars}.b32.i2p
+    if len(dom) == 52 or 56 >= len(dom) <= 64:
+        return dom.isalnum()
+    else:
+        return False
+
+def is_valid_i2p_domain(domain):
+    if not domain.endswith('.i2p'):
+        return False
+    if domain.endswith('b32.i2p'):
+        return is_valid_i2p_b32_domain(domain)
+    else:
+        if domain in get_reserved_i2p_domains():
+            return False
+        # 67 characters maximum, including the '.i2p'
+        if len(domain) > 67:
+            return False
+        return domain[:-4].replace('-', '').isalnum()
+
+# FILTER I2P 'Website Unknown' and 'Website Unreachable'
+def is_filtered_i2p_page(dom_hash_id):
+    is_filtered = False
+    if dom_hash_id == '186eff95227efa351e6acfc00a807a7b' or dom_hash_id == '58f5624724ece6452bf2fd50975df06a':  # 'Website Unreachable'
+        print('I2P Website Unreachable')
+        is_filtered = True
+    elif dom_hash_id == 'd71f204a2ee135a45b1e34deb8377094':  # b'Website Unknown'
+        print('Website Unknown - Website Not Found in Address Book')
+        is_filtered = True
+    elif dom_hash_id == 'a530b30b5921d45f591a0c6a716ffcd9':  # 'Website Unreachable'
+        print('Invalid Destination')
+        is_filtered = True
+    elif dom_hash_id == 'cf312a7eded2d6261712701d7a06f335':  # 'Error: Request Denied'
+        print('Error: Request Denied')
+        is_filtered = True
+    return is_filtered
+
 
 def is_valid_domain(domain):
-    faup.decode(domain)
-    url_unpack = faup.get()
-    unpack_domain = url_unpack['domain'].lower()
+    unpack_domain = psl_faup.get_domain(domain)
     return domain == unpack_domain
 
-def get_faup():
-    return faup
-
 def unpack_url(url):
-    f = get_faup()
-    f.decode(url)
-    url_decoded = f.get()
+    url_decoded = psl_faup.unparse_url(url)
+    if not url_decoded:
+        return None
     port = url_decoded['port']
     if not port:
         if url_decoded['scheme'] == 'http':
@@ -127,6 +273,31 @@ def unpack_url(url):
     url_decoded['domain'] = url_decoded['domain'].lower()
     url_decoded['url'] = url.replace(url_decoded['host'], url_decoded['host'].lower(), 1)
     return url_decoded
+
+def get_url_domain(url):
+    url_decoded = psl_faup.unparse_url(url)
+    if not url_decoded:
+        return None
+    return url_decoded['domain'].lower()
+
+# TODO options to only extract domains
+# TODO extract onions
+def extract_url_from_text(content):
+    urls = set()
+    r_url = r"(?:(?:https?|ftp):\/\/)?(?:\S+(?::\S*)?@)?(?:\[(?:(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,7}:|(?:[A-Fa-f0-9]{1,4}:){1,6}:[A-Fa-f0-9]{1,4}|::(?:[A-Fa-f0-9]{1,4}:){0,5}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,4}:){1,5}::(?:[A-Fa-f0-9]{1,4})?|(?:[A-Fa-f0-9]{1,4}:){1,4}::(?:[A-Fa-f0-9]{1,4}:){0,1}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,3}:){1}::(?:[A-Fa-f0-9]{1,4}:){0,2}[A-Fa-f0-9]{1,4}|(?:[A-Fa-f0-9]{1,2}:){1}::(?:[A-Fa-f0-9]{1,4}:){0,3}[A-Fa-f0-9]{1,4}|[A-Fa-f0-9]{1,4}::(?:[A-Fa-f0-9]{1,4}:){0,4}[A-Fa-f0-9]{1,4}|::(?:[A-Fa-f0-9]{1,4}:){0,5}[A-Fa-f0-9]{1,4}|fe80:(?:[A-Fa-f0-9]{0,4}:){0,4}%[0-9a-zA-Z]{1,}|::(?:ffff(?::0{1,4}){0,1}:){0,1}(?:(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9])?[0-9])\.){3}(?:25[0-5]|(?:2[0-4]|1{0,1}[0-9])?[0-9]))\]|(?:(?:25[0-5]|2[0-4]\d|1\d\d|\d{1,2})\.){3}(?:25[0-5]|2[0-4]\d|1\d\d|\d{1,2})|(?:(?:[a-zA-Z0-9\-]+\.)+[a-zA-Z]{2,}))(?::\d{2,5})?(?:\/[^\s]*)?"
+    for url in regex_findall('extract_url_from_text', gen_uuid(), r_url, 'user_id', content, max_time=10):
+        if url.startswith('http://'):
+            if url in urls:
+                continue
+        elif not url.startswith('https://'):
+            if f'http://{url}' in urls:
+                continue
+        urls.add(url)
+        # check if onions
+    return list(urls)
+    # extract onions
+    # extract IP
+
 
 # # # # # # # #
 #             #
@@ -164,9 +335,7 @@ def extract_favicon_from_html(html, url):
     #   - <meta name="msapplication-config" content="/icons/browserconfig.xml">
 
     # Root Favicon
-    f = get_faup()
-    f.decode(url)
-    url_decoded = f.get()
+    url_decoded = psl_faup.unparse_url(url)
     root_domain = f"{url_decoded['scheme']}://{url_decoded['domain']}"
     default_icon = f'{root_domain}/favicon.ico'
     favicons_urls.add(default_icon)
@@ -230,6 +399,7 @@ def extract_favicon_from_html(html, url):
 #             #
 # # # # # # # #
 
+# /!\ REQUIRE KILL SIGNAL
 def extract_title_from_html(html):
     soup = BeautifulSoup(html, 'html.parser')
     title = soup.title
@@ -245,6 +415,33 @@ def extract_description_from_html(html):
     if description:
         return description['content']
     return ''
+
+def _extract_title(r_key, html_content):
+    title_content = extract_title_from_html(html_content)
+    if title_content:
+        r_cache.set(r_key, title_content)
+        r_cache.expire(r_key, 360)
+
+def extract_title(html_content, max_time=60):
+    r_key = f'title:extract:{generate_uuid()}'
+    proc = Proc(target=_extract_title, args=(r_key, html_content), daemon=True)
+    try:
+        proc.start()
+        proc.join(max_time)
+        if proc.is_alive():
+            proc.terminate()
+            proc.join()
+            return None
+        else:
+            title = r_cache.get(r_key)
+            r_cache.delete(r_key)
+            return title
+    except KeyboardInterrupt:
+        print("Caught KeyboardInterrupt, terminating regex worker")
+        proc.terminate()
+        proc.join()
+        sys.exit(0)
+
 
 def extract_keywords_from_html(html):
     soup = BeautifulSoup(html, 'html.parser')
@@ -354,7 +551,7 @@ def _reprocess_all_hars_cookie_name():
         for cookie_name in extract_cookies_names_from_har(get_har_content(har_id)):
             print(domain, date, cookie_name)
             cookie = CookiesNames.create(cookie_name)
-            cookie.add(date, Domain(domain))
+            cookie.add(date, Domains.Domain(domain))
 
 def extract_etag_from_har(har):  # TODO check response url
     etags = set()
@@ -377,7 +574,7 @@ def _reprocess_all_hars_etag():
         for etag_content in extract_etag_from_har(get_har_content(har_id)):
             print(domain, date, etag_content)
             etag = Etags.create(etag_content)
-            etag.add(date, Domain(domain))
+            etag.add(date, Domains.Domain(domain))
 
 def extract_hhhash_by_id(har_id, domain, date):
     return extract_hhhash(get_har_content(har_id), domain, date)
@@ -392,9 +589,7 @@ def extract_hhhash(har, domain, date):
             if entrie.get('response').get('status') == 200:  # != 301:
                 # print(url, entrie.get('response').get('status'))
 
-                f = get_faup()
-                f.decode(url)
-                domain_url = f.get().get('domain')
+                domain_url = psl_faup.get_domain(url)
                 if domain_url == domain:
 
                     headers = entrie.get('response').get('headers')
@@ -407,7 +602,7 @@ def extract_hhhash(har, domain, date):
 
                         # -----
                         obj = HHHashs.create(hhhash_header, hhhash)
-                        obj.add(date, Domain(domain))
+                        obj.add(date, Domains.Domain(domain))
 
                     hhhashs.add(hhhash)
                     urls.add(url)
@@ -427,7 +622,6 @@ def _reprocess_all_hars_hhhashs():
         date = har_id.split('/')
         date = f'{date[-4]}{date[-3]}{date[-2]}'
         extract_hhhash_by_id(har_id, domain, date)
-
 
 
 def _gzip_har(har_id):
@@ -477,6 +671,14 @@ def create_cookie_crawler(cookie_dict, domain, crawler_type='web'):
 ################################################################################
 ################################################################################
 
+# # # # # # # # #
+#               #
+#   COOKIEJARS  #
+#               #
+# # # # # # # # #
+
+# TODO EDIT COOKIEJAR
+
 def get_cookiejars():
     return r_crawler.smembers('cookiejars:all')
 
@@ -486,10 +688,32 @@ def get_cookiejars_global():
         cookiejars = []
     return cookiejars
 
+def get_cookiejars_org(org_uuid):
+    cookiejars = ail_orgs.get_org_objs_by_type(org_uuid, 'cookiejar')
+    if not cookiejars:
+        cookiejars = []
+    return cookiejars
+
+def get_cookiejars_orgs():
+    cookiejars = []
+    for cookiejar_uuid in get_cookiejars():
+        cookiejar = Cookiejar(cookiejar_uuid)
+        if cookiejar.get_level() == 2:
+            cookiejars.append(cookiejar_uuid)
+    return cookiejars
+
 def get_cookiejars_user(user_id):
     cookiejars = r_crawler.smembers(f'cookiejars:user:{user_id}')
     if not cookiejars:
         cookiejars = []
+    return cookiejars
+
+def get_cookiejars_users():
+    cookiejars = []
+    for cookiejar_uuid in get_cookiejars():
+        cookiejar = Cookiejar(cookiejar_uuid)
+        if cookiejar.get_level() == 0:
+            cookiejars.append(cookiejar_uuid)
     return cookiejars
 
 class Cookiejar:
@@ -518,20 +742,46 @@ class Cookiejar:
     def _set_user(self, user_id):
         return r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'user', user_id)
 
-    def get_level(self):
-        level = r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'level')
-        if level:
-            level = 1
-        else:
-            level = 0
-        return level
+    ## LEVEL ##
 
-    def _set_level(self, level):
-        if level:
-            level = 1
-        else:
-            level = 0
+    def get_level(self):
+        return int(r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'level'))
+
+    def set_level(self, level, org_uuid):
+        level = int(level)
         r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'level', level)
+        if level == 0:
+            r_crawler.sadd(f'cookiejars:user:{self.get_user()}', self.uuid)
+        elif level == 1:
+            r_crawler.sadd('cookiejars:global', self.uuid)
+        elif level == 2:
+            self.add_to_org(org_uuid)
+
+    def reset_level(self, old_level, new_level, new_org_uuid):
+        if old_level == 0:
+            r_crawler.srem(f'cookiejars:user:{self.get_user()}', self.uuid)
+        elif old_level == 1:
+            r_crawler.srem('cookiejars:global', self.uuid)
+        # Org
+        elif old_level == 2:
+            ail_orgs.remove_obj_to_org(self.get_org(), 'cookiejar', self.uuid)
+        self.set_level(new_level, new_org_uuid)
+
+    ## --LEVEL-- ##
+
+    ## ORG ##
+
+    def get_creator_org(self):
+        return r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'creator_org')
+
+    def get_org(self):
+        return r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'org')
+
+    def add_to_org(self, org_uuid):
+        r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'org', org_uuid)
+        ail_orgs.add_obj_to_org(org_uuid, 'cookiejar', self.uuid)
+
+        ## -ORG- ##
 
     def is_cookie_in_jar(self, cookie_uuid):
         # kvrocks sismember TEMP fix
@@ -557,7 +807,9 @@ class Cookiejar:
         meta = {'uuid': self.uuid,
                 'date': self.get_date(),
                 'description': self.get_description(),
+                'org': self.get_org(),
                 'user': self.get_user()}
+        meta['org_name'] = ail_orgs.Organisation(meta['org']).get_name()
         if level:
             meta['level'] = self.get_level()
         if nb_cookies:
@@ -597,19 +849,18 @@ class Cookiejar:
             cookie = Cookie(cookie_uuid)
             cookie.delete()
 
-    def create(self, user_id, description=None, level=1):
+    # TODO Last EDIT
+    def create(self, user_org, user_id, level, description=None):
         if self.exists():
             raise Exception('Cookiejar already exists')
 
         r_crawler.sadd('cookiejars:all', self.uuid)
-        if level == 0:
-            r_crawler.sadd(f'cookiejars:user:{user_id}', self.uuid)
-        else:
-            r_crawler.sadd('cookiejars:global', self.uuid)
+        r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'creator_org', user_org)
 
         self._set_user(user_id)
-        self._set_date(datetime.now().strftime("%Y%m%d"))
-        self._set_level(level)
+        self.set_level(level, user_org)
+
+        self._set_date(datetime.now().strftime("%Y%m%d"))  # TODO improve DATE
         if description:
             self.set_description(description)
 
@@ -619,10 +870,13 @@ class Cookiejar:
         r_crawler.srem(f'cookiejars:user:{self.get_user()}', self.uuid)
         r_crawler.srem('cookiejars:global', self.uuid)
         r_crawler.srem('cookiejars:all', self.uuid)
+        level = self.get_level()
+        if level == 2:
+            ail_orgs.remove_obj_to_org(self.get_org(), 'investigation', self.uuid)
         r_crawler.delete(f'cookiejar:meta:{self.uuid}')
 
 
-def create_cookiejar(user_id, description=None, level=1, cookiejar_uuid=None):
+def create_cookiejar(user_org, user_id, description=None, level=1, cookiejar_uuid=None):
     if cookiejar_uuid:
         cookiejar = Cookiejar(cookiejar_uuid)
         if cookiejar.exists():
@@ -630,7 +884,7 @@ def create_cookiejar(user_id, description=None, level=1, cookiejar_uuid=None):
     else:
         cookiejar_uuid = generate_uuid()
     cookiejar = Cookiejar(cookiejar_uuid)
-    cookiejar.create(user_id, description=description, level=level)
+    cookiejar.create(user_org, user_id, level, description=description)
     return cookiejar_uuid
 
 def get_cookiejars_meta_by_iterator(iter_cookiejar_uuid):
@@ -640,16 +894,17 @@ def get_cookiejars_meta_by_iterator(iter_cookiejar_uuid):
         cookiejars_meta.append(cookiejar.get_meta(nb_cookies=True))
     return cookiejars_meta
 
-def get_cookiejars_by_user(user_id):
+def get_cookiejars_by_user(user_org, user_id):
     cookiejars_global = get_cookiejars_global()
+    cookiejars_org = get_cookiejars_org(user_org)
     cookiejars_user = get_cookiejars_user(user_id)
-    return [*cookiejars_user, *cookiejars_global]
+    return [*cookiejars_user, *cookiejars_org, *cookiejars_global]
 
 ## API ##
 
-def api_get_cookiejars_selector(user_id):
+def api_get_cookiejars_selector(user_org, user_id):
     cookiejars = []
-    for cookiejar_uuid in get_cookiejars_by_user(user_id):
+    for cookiejar_uuid in get_cookiejars_by_user(user_org, user_id):
         cookiejar = Cookiejar(cookiejar_uuid)
         description = cookiejar.get_description()
         if not description:
@@ -657,37 +912,40 @@ def api_get_cookiejars_selector(user_id):
         cookiejars.append(f'{description} : {cookiejar.uuid}')
     return sorted(cookiejars)
 
-def api_verify_cookiejar_acl(cookiejar_uuid, user_id):
-    cookiejar = Cookiejar(cookiejar_uuid)
-    if not cookiejar.exists():
-        return {'error': 'unknown cookiejar uuid', 'cookiejar_uuid': cookiejar_uuid}, 404
-    if cookiejar.get_level() == 0:  # TODO: check if user is admin
-        if cookiejar.get_user() != user_id:
-            return {'error': 'The access to this cookiejar is restricted'}, 403
-
-def api_edit_cookiejar_description(user_id, cookiejar_uuid, description):
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+def api_edit_cookiejar_description(user_org, user_id, user_role, cookiejar_uuid, description):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
     if resp:
         return resp
     cookiejar = Cookiejar(cookiejar_uuid)
     cookiejar.set_description(description)
     return {'cookiejar_uuid': cookiejar_uuid}, 200
 
-def api_delete_cookiejar(user_id, cookiejar_uuid):
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+def api_delete_cookiejar(user_org, user_id, user_role, cookiejar_uuid):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'delete')
     if resp:
         return resp
     cookiejar = Cookiejar(cookiejar_uuid)
     cookiejar.delete()
     return {'cookiejar_uuid': cookiejar_uuid}, 200
 
-def api_get_cookiejar(cookiejar_uuid, user_id):
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+def api_get_cookiejar(user_org, user_id, user_role, cookiejar_uuid):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'view')
     if resp:
         return resp
     cookiejar = Cookiejar(cookiejar_uuid)
     meta = cookiejar.get_meta(level=True, cookies=True, r_json=True)
     return meta, 200
+
+####  ACL  ####
+
+def api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, action):
+    cookiejar = Cookiejar(cookiejar_uuid)
+    if not cookiejar.exists():
+        return {'error': 'unknown cookiejar uuid', 'cookiejar_uuid': cookiejar_uuid}, 404
+    if not ail_orgs.check_obj_access_acl(cookiejar, user_org, user_id, user_role, action):
+        return {"status": "error", "reason": "Access Denied"}, 403
+
+####  API  ####
 
 # # # # # # # #
 #             #
@@ -788,20 +1046,20 @@ class Cookie:
 
 ## API ##
 
-def api_get_cookie(user_id, cookie_uuid):
+def api_get_cookie(user_org, user_id, user_role, cookie_uuid):
     cookie = Cookie(cookie_uuid)
     if not cookie.exists():
         return {'error': 'unknown cookie uuid', 'cookie_uuid': cookie_uuid}, 404
-    resp = api_verify_cookiejar_acl(cookie.get_cookiejar(), user_id)
+    resp = api_check_cookiejar_access_acl(cookie.get_cookiejar(), user_org, user_id, user_role, 'view')
     if resp:
         return resp
     return cookie.get_meta()
 
-def api_edit_cookie(user_id, cookie_uuid, cookie_dict):
+def api_edit_cookie(user_org, user_id, user_role, cookie_uuid, cookie_dict):
     cookie = Cookie(cookie_uuid)
     if not cookie.exists():
         return {'error': 'unknown cookie uuid', 'cookie_uuid': cookie_uuid}, 404
-    resp = api_verify_cookiejar_acl(cookie.get_cookiejar(), user_id)
+    resp = api_check_cookiejar_access_acl(cookie.get_cookiejar(), user_org, user_id, user_role, 'edit')
     if resp:
         return resp
     if 'name' not in cookie_dict or 'value' not in cookie_dict or not cookie_dict['name'] or not cookie_dict['value']:
@@ -809,8 +1067,8 @@ def api_edit_cookie(user_id, cookie_uuid, cookie_dict):
     cookie.edit(cookie_dict)
     return cookie.get_meta(), 200
 
-def api_create_cookie(user_id, cookiejar_uuid, cookie_dict):
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+def api_create_cookie(user_org, user_id, user_role, cookiejar_uuid, cookie_dict):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
     if resp:
         return resp
     if 'name' not in cookie_dict or 'value' not in cookie_dict or not cookie_dict['name'] or not cookie_dict['value']:
@@ -826,12 +1084,12 @@ def api_create_cookie(user_id, cookiejar_uuid, cookie_dict):
     cookiejar.add_cookie(name, value, domain=domain, httponly=httponly, path=path, secure=secure, text=text)
     return resp, 200
 
-def api_delete_cookie(user_id, cookie_uuid):
+def api_delete_cookie(user_org, user_id, user_role, cookie_uuid):
     cookie = Cookie(cookie_uuid)
     if not cookie.exists():
         return {'error': 'unknown cookie uuid', 'cookie_uuid': cookie_uuid}, 404
     cookiejar_uuid = cookie.get_cookiejar()
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
     if resp:
         return resp
     cookiejar = Cookiejar(cookiejar_uuid)
@@ -877,8 +1135,8 @@ def unpack_imported_json_cookie(json_cookie):
 
 ##  - -  ##
 #### COOKIEJAR API ####
-def api_import_cookies_from_json(user_id, cookiejar_uuid, json_cookies_str):  # # TODO: add catch
-    resp = api_verify_cookiejar_acl(cookiejar_uuid, user_id)
+def api_import_cookies_from_json(user_org, user_id, user_role, cookiejar_uuid, json_cookies_str):  # # TODO: add catch
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
     if resp:
         return resp
     json_cookies = json.loads(json_cookies_str)
@@ -895,7 +1153,7 @@ def api_import_cookies_from_json(user_id, cookiejar_uuid, json_cookies_str):  # 
 # # # # # # # #
 
 def get_default_user_agent():
-    return 'Mozilla/5.0 (Windows NT 10.0; rv:102.0) Gecko/20100101 Firefox/102.0'
+    return 'Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
 
 def get_last_crawled_domains(domain_type):
     return r_crawler.lrange(f'last_{domain_type}', 0, -1)
@@ -953,6 +1211,276 @@ def get_crawlers_stats(domain_type=None):
         crawled = up + down
         stats[domain_type] = {'queue': queue, 'up': up, 'down': down, 'crawled': crawled}
     return stats
+
+def reload_crawlers_stats():
+    for domain_type in get_crawler_all_types():
+        tasks = r_crawler.smembers(f'crawler:queue:type:{domain_type}')
+        for task_uuid in tasks:
+            task = CrawlerTask(task_uuid)
+            if not task.is_in_queue() and task.get_status() is None:
+                capture = task.get_capture()
+                if capture:
+                    c = CrawlerCapture(capture)
+                    if not c.exists():
+                        task.delete()
+                else:
+                    task.delete()
+
+# Crawler Capture
+
+class CrawlerCapturesProcessor:
+
+    def __init__(self, logger):
+        self.logger = logger
+        self.date = None
+        self.epoch = None
+        self.domain = None
+        self.items_dir = None
+        self.root_item_id = None
+
+        self.vanity_tags = Tag.get_domain_vanity_tags()
+
+        # TODO MOVE ME
+        self.placeholder_screenshots = {'07244254f73e822bd4a95d916d8b27f2246b02c428adc29082d09550c6ed6e1a'   # blank
+                                        '27e14ace10b0f96acd2bd919aaa98a964597532c35b6409dff6cc8eec8214748',  # not found
+                                        '3e66bf4cc250a68c10f8a30643d73e50e68bf1d4a38d4adc5bfc4659ca2974c0'}  # 404
+
+    def _decode_capture(self, capture):
+        if capture.get('png') and capture['png']:
+            capture['png'] = base64.b64decode(capture['png'])
+        # if capture.get('downloaded_file') and capture['downloaded_file']:
+        #     capture['downloaded_file'] = base64.b64decode(capture['downloaded_file'])
+        if capture.get('potential_favicons') and capture['potential_favicons']:
+            capture['potential_favicons'] = {base64.b64decode(f) for f in capture['potential_favicons']}
+        if capture.get('children') and capture['children']:
+            for child in capture['children']:
+                child = self._decode_capture(child)
+        return capture
+
+    def extract_domain_from_capture(self, capture):
+        url = capture.get('last_redirected_url')
+        if not url:
+            pass
+            # TODO create exception
+        domain_id = get_url_domain(url)
+        self.domain = Domains.Domain(domain_id)  # TODO SANITYZE
+
+    def extract_time_from_capture(self, capture):
+        if capture.get('har'):
+            if capture['har'].get('log'):
+                if capture['har']['log'].get('pages'):
+                    if capture['har']['log']['pages'][0]:
+                        startedDateTime = capture['har']['log']['pages'][0].get('startedDateTime')
+                        if startedDateTime:
+                            self.date = f'{startedDateTime[0:4]}/{startedDateTime[5:7]}/{startedDateTime[8:10]}'
+                            self.epoch = Date.convert_str_datetime_to_epoch(startedDateTime)
+        if not self.date:
+            self.date = get_current_date(separator=True)
+            self.epoch = int(time.time())
+        print(self.date, self.epoch)
+
+    def extract_title(self, item, html_content):
+        title_content = extract_title(html_content)
+        if title_content:
+            title = Titles.create_title(title_content)
+            title.add(item.get_date(), item)
+            return title
+        return None
+
+    def process_domhash(self, item, dom_hash_id, html_content):
+        dom_hash = DomHashs.create(html_content, obj_id=dom_hash_id)
+        dom_hash.add(self.date.replace('/', ''), item)
+        dom_hash.add_correlation('domain', '', self.domain.id)
+
+    def process_screenshot(self, item, content):
+        screenshot = Screenshots.create_screenshot(content, b64=False)
+        if screenshot:
+            if not screenshot.is_tags_safe():
+                unsafe_tag = 'dark-web:topic="pornography-child-exploitation"'
+                self.domain.add_tag(unsafe_tag)
+                item.add_tag(unsafe_tag)
+            # Remove Placeholder pages # TODO Replace with warning list ???
+            if screenshot.id not in self.placeholder_screenshots:
+                # Create Correlations
+                screenshot.add_correlation('item', '', item.id)
+                screenshot.add_correlation('domain', '', self.domain.id)
+            return screenshot
+        return None
+
+    def process_har(self, root_id, har_content):
+        har_id = create_har_id(self.date, root_id)
+        save_har(har_id, har_content)
+        for cookie_name in extract_cookies_names_from_har(har_content):
+            print(cookie_name)
+            cookie = CookiesNames.create(cookie_name)
+            cookie.add(self.date.replace('/', ''), self.domain)
+            # TODO process cookies
+        for etag_content in extract_etag_from_har(har_content):
+            print(etag_content)
+            etag = Etags.create(etag_content)
+            etag.add(self.date.replace('/', ''), self.domain)
+        # HHHASH
+        extract_hhhash(har_content, self.domain.id, self.date.replace('/', ''))
+
+    def process_favicons(self, item, favicons):
+        for favicon in favicons:
+            fav = Favicons.create(favicon)
+            fav.add(item.get_date(), item)
+
+    def process(self, capture, capture_parent='capture_importer'):
+        capture = self._decode_capture(capture)
+        self.extract_domain_from_capture(capture)
+        # Filter unsafe onions
+        if self.domain.id.endswith('.onion'):
+            if is_onion_filter_enabled():
+                try:
+                    if not check_if_onion_is_safe(self.domain.id, unknown=is_onion_filter_unknown()):  # LOG ?????????????????
+                        return []
+                except OnionFilteringError:
+                    return []
+
+        self.root_item_id = None
+        self.extract_time_from_capture(capture)
+        self.items_dir = get_date_crawled_items_source(self.date)
+        # process capture + get objects to enqueue
+        objs = self.process_capture(None, capture)
+        # TODO log filtered unsafe content
+        if objs:
+            # objs.append(self.domain)
+            # Update domain first/last seen
+            self.domain.update_daterange(self.date.replace('/', ''))
+            # Origin + History
+            if self.root_item_id:
+                self.domain.set_last_origin(capture_parent)
+                # Vanity
+                self.domain.update_vanity_cluster()
+                domain_vanity = self.domain.get_vanity()
+                if domain_vanity in self.vanity_tags:
+                    for tag in self.vanity_tags[domain_vanity]:
+                        self.domain.add_tag(tag)
+            # Domain history
+            self.domain.add_history(self.epoch, root_item=self.root_item_id)
+
+            # ADD to crawled dashboard - new importe feeder section ???
+            # update_last_crawled_domain(self.domain.get_domain_type(), self.domain.id, self.epoch)
+
+            # Passive SSH # TODO
+            # if self.passive_ssh:
+            #     SSHKeys.save_passive_ssh_host(self.domain.id)
+        return objs
+
+    def process_capture(self, parent_id, capture):
+        objs = []
+        filter_page = False
+        if not parent_id:
+            parent_id = 'imported_capture'
+        print(capture.keys())
+
+        # ERROR
+        if 'error' in capture:
+            self.logger.warning(str(capture['error']))  # TODO improve error log
+
+        # CHECK LAST URL
+        if capture.get('last_redirected_url'):  # TODO ADD RELATIONSHIP REDIRECT
+            last_url = capture['last_redirected_url']
+            unpacked_last_url = unpack_url(last_url)
+            new_domain = unpacked_last_url['domain']
+            # CHECK REDIRECTION
+            if new_domain != self.domain.id and not self.root_item_id:
+                if new_domain == 'localhost':
+                    self.logger.warning('Filter localhost redirection')
+                    filter_page = True
+                # REDIRECT
+                else:
+                    self.logger.warning(f'External redirection {self.domain.id} -> {new_domain}')
+                    if not self.root_item_id:
+                        self.domain = Domains.Domain(new_domain)
+                        # Filter Domain
+                        if is_onion_filter_enabled():
+                            if new_domain.endswith('.onion'):
+                                if not check_if_onion_is_safe(new_domain, unknown=is_onion_filter_unknown()):
+                                    return False  # TODO RETURN []
+        else:
+            last_url = f'http://{self.domain.id}'
+
+        if capture.get('html') and not filter_page:
+            item_id = create_item_id(self.items_dir, self.domain.id)
+            item = Item(item_id)
+            print(item.id)
+
+            # DOM-HASH ID
+            dom_hash_id = DomHashs.extract_dom_hash(capture['html'])
+
+            # FILTER I2P 'Website Unknown' and 'Website Unreachable'
+            if self.domain.id.endswith('.i2p'):
+                if is_filtered_i2p_page(dom_hash_id):
+                    filter_page = True
+
+            # NOT FILTERED
+            if not filter_page:
+                # ITEM
+                item.create(capture['html'], content_type='str')  # Save item content
+                item.add_tag('infoleak:submission="crawler"')  # TODO USE MANUAL/Imported tag ?????
+                objs.append(item)
+
+                create_item_metadata(item_id, last_url, parent_id)
+                if self.root_item_id is None:
+                    self.root_item_id = item_id
+                parent_id = item_id
+
+                # DOM-HASH
+                self.process_domhash(item, dom_hash_id, capture['html'])
+
+                # TITLE
+                title = self.extract_title(item, capture['html'])
+                if title:
+                    objs.append(title)
+
+                # SCREENSHOT
+                if capture.get('png'):  # TODO add option to disable screenshot/har save
+                    screenshot = self.process_screenshot(item, capture['png'])
+
+                # HAR
+                if capture.get('har'):  # TODO add option to disable har save
+                    self.process_har(self.root_item_id, capture['har'])
+
+                # FAVICONS
+                if capture.get('potential_favicons'):
+                    self.process_favicons(item, capture['potential_favicons'])
+
+        # Next Childrens
+        if capture.get('children'):
+            for children in capture['children']:
+                objs[0:0] = self.process_capture(parent_id, children)
+        return objs
+
+def create_tm_dir():
+    temp_dir = os.path.join(os.environ['AIL_HOME'], 'temp')
+    if not os.path.isdir(temp_dir):
+        os.mkdir(temp_dir)
+    return temp_dir
+
+def get_lacus_importer_captures():
+    return r_db.smembers('importer:lacus:capture')
+
+def get_lacus_capture_to_import():
+    return r_db.spop('importer:lacus:capture')
+
+def add_lacus_capture_to_import(capture):
+    capture_uuid = generate_uuid()
+    r_db.sadd('importer:lacus:capture', capture_uuid)
+    temp_dir = create_tm_dir()
+    with open(os.path.join(temp_dir, f'capture_{capture_uuid}.json'), 'w') as f:
+        f.write(json.dumps(capture))
+    return capture_uuid
+
+# API
+def api_add_lacus_capture_to_import(capture):
+    if not capture.get('html'):
+        return {'error': 'Missing or empty HTML content'}, 400
+    if not capture.get('last_redirected_url'):
+        return {'error': 'Missing field: last_redirected_url'}, 400
+    return {'uuid': add_lacus_capture_to_import(capture)}, 200
 
 #### Blocklist ####
 
@@ -1252,8 +1780,11 @@ class CrawlerSchedule:
             self._set_field('cookiejar', cookiejar)
         if header:
             self._set_field('header', header)
+
+        if url_decoded['domain'].endswith('i2p'):
+            proxy = None
         if proxy:
-            if proxy == 'web':
+            if proxy == 'web' or proxy == 'i2p':
                 proxy = None
             elif proxy == 'force_tor' or proxy == 'tor' or proxy == 'onion':
                 proxy = 'force_tor'
@@ -1285,6 +1816,11 @@ def create_schedule(frequency, user, url, depth=1, har=True, screenshot=True, he
     schedule = CrawlerSchedule(schedule_uuid)
     schedule.create(frequency, user, url, depth=depth, har=har, screenshot=screenshot, header=header, cookiejar=cookiejar, proxy=proxy, user_agent=user_agent, tags=tags)
     return schedule_uuid
+
+def _delete_schedules():
+    for schedule_uuid in get_schedulers_uuid():
+        schedule = CrawlerSchedule(schedule_uuid)
+        schedule.delete()
 
 # TODO sanityze UUID
 def api_delete_schedule(data):
@@ -1340,15 +1876,20 @@ class CrawlerCapture:
         if task_uuid:
             return CrawlerTask(task_uuid)
 
-    def get_start_time(self, r_str=True):
-        start_time = self.get_task().get_start_time()
-        if r_str:
-            return start_time
-        elif not start_time:
-            return 0
+    def get_start_time(self, r_str=True, task=None):
+        if not task:
+            task = self.get_task()
+        if task:
+            start_time = task.get_start_time()
+            if r_str:
+                return start_time
+            elif not start_time:
+                return 0
+            else:
+                start_time = datetime.strptime(start_time, "%Y/%m/%d  -  %H:%M.%S").timestamp()
+                return int(start_time)
         else:
-            start_time = datetime.strptime(start_time, "%Y/%m/%d  -  %H:%M.%S").timestamp()
-            return int(start_time)
+            return 0
 
     def get_status(self):
         status = r_cache.hget(f'crawler:capture:{self.uuid}', 'status')
@@ -1366,13 +1907,13 @@ class CrawlerCapture:
         launch_time = int(time.time())
         r_crawler.hset(f'crawler:task:{task_uuid}', 'capture', self.uuid)
         r_crawler.hset('crawler:captures:tasks', self.uuid, task_uuid)
-        r_crawler.zadd('crawler:captures', {self.uuid: launch_time})
         r_cache.hset(f'crawler:capture:{self.uuid}', 'launch_time', launch_time)
+        r_crawler.zadd('crawler:captures', {self.uuid: launch_time})
         r_cache.zadd('crawler:captures', {self.uuid: launch_time})
 
     def update(self, status):
         # Error or Reload
-        if not status:
+        if status is None:
             r_cache.hset(f'crawler:capture:{self.uuid}', 'status', CaptureStatus.UNKNOWN.value)
             r_cache.zadd('crawler:captures', {self.uuid: 0})
         else:
@@ -1396,6 +1937,7 @@ class CrawlerCapture:
 def create_capture(capture_uuid, task_uuid):
     capture = CrawlerCapture(capture_uuid)
     capture.create(task_uuid)
+    return capture
 
 def get_crawler_capture():
     capture = r_cache.zpopmin('crawler:captures')
@@ -1411,15 +1953,24 @@ def get_captures_status():
     for capture_uuid in get_crawler_captures():
         capture = CrawlerCapture(capture_uuid)
         task = capture.get_task()
-        domain = task.get_domain()
-        dom = Domain(domain)
-        meta = {
-            'uuid': task.uuid,
-            'domain': dom.get_id(),
-            'type': dom.get_domain_type(),
-            'start_time': capture.get_start_time(),
-            'status': capture.get_status(),
-        }
+        if not task:
+            meta = {
+                'uuid': 'UNKNOWN',
+                'domain': 'UNKNOWN',
+                'type': 'UNKNOWN',
+                'start_time': 0,
+                'status': capture.get_status(),
+            }
+        else:
+            domain = task.get_domain()
+            dom = Domains.Domain(domain)
+            meta = {
+                'uuid': task.uuid,
+                'domain': dom.get_id(),
+                'type': dom.get_domain_type(),
+                'start_time': capture.get_start_time(task=task),
+                'status': capture.get_status(),
+            }
         capture_status = capture.get_status()
         if capture_status:
             capture_status = CaptureStatus(int(capture_status)).name
@@ -1432,7 +1983,7 @@ def delete_captures():
         capture = CrawlerCapture(capture_uuid)
         capture.delete()
 
-##-- CRAWLER STATE --##
+## --CRAWLER STATE-- ##
 
 
 #### CRAWLER TASK ####
@@ -1444,6 +1995,12 @@ class CrawlerTask:
 
     def exists(self):
         return r_crawler.exists(f'crawler:task:{self.uuid}')
+
+    def is_in_queue(self):
+        if r_crawler.zscore('crawler:queue', self.uuid) is not None:
+            return True
+        else:
+            return False
 
     def get_url(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'url')
@@ -1544,7 +2101,7 @@ class CrawlerTask:
     # TODO SANITIZE PRIORITY
     # PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
     def create(self, url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
-               user_agent=None, tags=[], parent='manual', priority=0, external=False):
+               user_agent=None, tags=[], parent='manual', priority=0, external=False, new_task=False):
         if self.exists():
             raise Exception('Error: Task already exists')
 
@@ -1552,7 +2109,7 @@ class CrawlerTask:
         url = url_decoded['url']
         domain = url_decoded['domain']
 
-        dom = Domain(domain)
+        dom = Domains.Domain(domain)
 
         # Discovery crawler
         if priority == 0:
@@ -1567,7 +2124,9 @@ class CrawlerTask:
         har = int(har)
         screenshot = int(screenshot)
 
-        if proxy == 'web':
+        if domain.endswith('i2p'):
+            proxy = None
+        if proxy == 'web' or proxy == 'i2p':
             proxy = None
         elif proxy == 'force_tor' or proxy == 'tor' or proxy == 'onion':
             proxy = 'force_tor'
@@ -1577,8 +2136,11 @@ class CrawlerTask:
         # Check if already in queue
         hash_query = get_task_hash(url, domain, depth, har, screenshot, priority, proxy, cookiejar, user_agent, header, tags)
         if r_crawler.hexists(f'crawler:queue:hash', hash_query):
-            self.uuid = r_crawler.hget(f'crawler:queue:hash', hash_query)
-            return self.uuid
+            if new_task:
+                return None
+            else:
+                self.uuid = r_crawler.hget(f'crawler:queue:hash', hash_query)
+                return self.uuid
 
         self._set_field('domain', domain)
         self._set_field('url', url)
@@ -1661,7 +2223,11 @@ def add_task_to_lacus_queue():
 
 # PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
 def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
-                user_agent=None, tags=[], parent='manual', priority=0, task_uuid=None, external=False):
+                user_agent=None, tags=[], parent='manual', priority=0, task_uuid=None, external=False, new_task=False):
+    """
+    Create a crawler task.
+    new_task: return task_uuid only if a new task is created
+    """
     if task_uuid:
         if CrawlerTask(task_uuid).exists():
             task_uuid = gen_uuid()
@@ -1670,9 +2236,29 @@ def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=
     task = CrawlerTask(task_uuid)
     task_uuid = task.create(url, depth=depth, har=har, screenshot=screenshot, header=header, cookiejar=cookiejar,
                             proxy=proxy, user_agent=user_agent, tags=tags, parent=parent, priority=priority,
-                            external=external)
+                            external=external, new_task=new_task)
     return task_uuid
 
+def recrawl_domain(domain_id):
+    domain = Domains.Domain(domain_id)
+    parent = domain.get_last_origin()
+    if not parent.get('item'):
+        parent = 'manual'
+    else:
+        parent = parent['item']
+    task_uuid = create_task(domain.id, parent=parent, priority=0, new_task=True, har=D_HAR, screenshot=D_SCREENSHOT)
+    if task_uuid:
+        print(task_uuid, domain.id, parent)
+
+def recrawl_onion_domains(date_month=None, all_onions_up=False):  # TODO RENAME ME
+    if all_onions_up:
+        to_crawl = Domains.get_domains_up_by_type('onion')
+    else:
+        if not date_month:
+            date_month = Date.get_previous_month_date()
+        to_crawl = set(Domains.get_domains_by_month(date_month, ['onion']))
+    for onion in to_crawl:
+        recrawl_domain(onion)
 
 ## -- CRAWLER TASK -- ##
 
@@ -1683,8 +2269,9 @@ def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=
 
 def api_parse_task_dict_basic(data, user_id):
     url = data.get('url', None)
-    if not url or url == '\n':
-        return {'status': 'error', 'reason': 'No url supplied'}, 400
+    urls = data.get('urls', None)
+    if (not url or url == '\n') and not urls:
+        return {'status': 'error', 'reason': 'No url(s) supplied'}, 400
 
     screenshot = data.get('screenshot', False)
     if screenshot:
@@ -1711,6 +2298,8 @@ def api_parse_task_dict_basic(data, user_id):
     proxy = data.get('proxy', None)
     if proxy == 'onion' or proxy == 'tor' or proxy == 'force_tor':
         proxy = 'force_tor'
+    elif proxy == 'web' or proxy == 'i2p':
+        proxy = None
     elif proxy:
         verify = api_verify_proxy(proxy)
         if verify[1] != 200:
@@ -1718,14 +2307,20 @@ def api_parse_task_dict_basic(data, user_id):
 
     tags = data.get('tags', [])
 
-    return {'url': url, 'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'tags': tags}, 200
+    data = {'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'tags': tags}
+    if url:
+        data['url'] = url
+    elif urls:
+        data['urls'] = urls
+    return data, 200
 
-def api_add_crawler_task(data, user_id=None):
+def api_add_crawler_task(data, user_org, user_id=None):
     task, resp = api_parse_task_dict_basic(data, user_id)
     if resp != 200:
         return task, resp
 
-    url = task['url']
+    url = task.get('url')
+    urls = task.get('urls')
     screenshot = task['screenshot']
     har = task['har']
     depth_limit = task['depth_limit']
@@ -1746,7 +2341,7 @@ def api_add_crawler_task(data, user_id=None):
     cookies = data.get('cookies', None)
     if not cookiejar_uuid and cookies:
         # Create new cookiejar
-        cookiejar_uuid = create_cookiejar(user_id, "single-shot cookiejar", 1, None)
+        cookiejar_uuid = create_cookiejar(user_org, user_id, "single-shot cookiejar", 1, None)  # TODO REVIEW DEFAULT LEVEL
         cookiejar = Cookiejar(cookiejar_uuid)
         for cookie in cookies:
             try:
@@ -1775,17 +2370,22 @@ def api_add_crawler_task(data, user_id=None):
                 if max(months, weeks, days, hours, minutes) <= 0:
                     return {'error': 'Invalid frequency'}, 400
                 frequency = f'{months}:{weeks}:{days}:{hours}:{minutes}'
-
-    if frequency:
-        # TODO verify user
-        task_uuid = create_schedule(frequency, user_id, url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
-                               cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags)
-    else:
-        # TODO HEADERS
-        # TODO USER AGENT
-        task_uuid = create_task(url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
-                           cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags,
-                           parent='manual', priority=90)
+    if url:
+        if frequency:
+            # TODO verify user
+            task_uuid = create_schedule(frequency, user_id, url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
+                                        cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags)
+        else:
+            # TODO HEADERS
+            # TODO USER AGENT
+            task_uuid = create_task(url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
+                                    cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags,
+                                    parent='manual', priority=90)
+    elif urls:
+        for url in urls:
+            task_uuid = create_task(url, depth=depth_limit, har=har, screenshot=screenshot, header=None,
+                                    cookiejar=cookiejar_uuid, proxy=proxy, user_agent=None, tags=tags,
+                                    parent='manual', priority=90)
 
     return {'uuid': task_uuid}, 200
 
@@ -1831,7 +2431,7 @@ def is_crawler_activated():
     return activate_crawler == 'True'
 
 def get_crawler_all_types():
-    return ['onion', 'web']
+    return ['i2p', 'onion', 'web']
 
 ##-- CRAWLER GLOBAL --##
 
@@ -1850,10 +2450,10 @@ def create_item_id(item_dir, domain):
     # remove /
     domain = domain.replace('/', '_')
     if len(domain) > 215:
-        UUID = domain[-215:]+str(uuid.uuid4())
+        n_uuid = domain[-215:]+str(uuid.uuid4())
     else:
-        UUID = domain+str(uuid.uuid4())
-    return os.path.join(item_dir, UUID)
+        n_uuid = domain+str(uuid.uuid4())
+    return os.path.join(item_dir, n_uuid)
 
 # # # # # # # # # # # #
 #                     #
@@ -2078,28 +2678,142 @@ def test_ail_crawlers():
 
 #### ---- ####
 
-# TODO CHECK MIGRATION - Rest API
 
-# TODO MIGRATE ME
-# def api_create_crawler_task(user_id, url, screenshot=True, har=True, depth_limit=1, max_pages=100, auto_crawler=False, crawler_delta=3600, crawler_type=None, cookiejar_uuid=None, user_agent=None):
-#     # validate url
-#     if url is None or url=='' or url=='\n':
-#         return ({'error':'invalid depth limit'}, 400)
+# # # # # # # # # # # # #
+#                       #
+#   CONTENT FILTERING   #
+#                       #
+# # # # # # # # # # # # #
+
+def _onion_lookup(onion_url):
+    try:
+        commit_id = git_status.get_last_commit_id_from_local()
+        user_agent = f'AIL-{commit_id}'
+        headers = {'User-Agent': user_agent}
+        response = requests.get(f'https://onion.ail-project.org/api/lookup/{onion_url}', timeout=10, headers=headers)
+        if response.status_code == 200:
+            json_response = response.json()
+            return json_response
+        else:
+            print(response)
+            return {'error': f'{response.status_code}'}
+    except requests.exceptions.ConnectionError:
+        return {'error': f'Connection Error'}
+    except requests.exceptions.ReadTimeout:
+        return {'error': f'Timeout Error'}
+
+
+def check_if_onion_is_safe(onion_url, unknown):
+    resp = _onion_lookup(onion_url)
+    if resp:
+        if isinstance(resp, dict):
+            if 'tags' in resp:
+                return Tag.is_tags_safe(resp['tags'])
+            elif 'error' in resp:
+                if resp['error']:
+                    raise OnionFilteringError(resp['error'])
+        elif not unknown:
+            if isinstance(resp, list):
+                if len(resp) > 1:
+                    if resp[1] == 404:
+                        return True
+    return False
+
+
+def _is_onion_filter_enabled():
+    enabled = r_crawler.hget('crawler:onion_filter', 'enabled')
+    if enabled is None:
+        r_crawler.hset('crawler:onion_filter', 'enabled', str(True))
+        filter_enabled = True
+    else:
+        filter_enabled = enabled == 'True'
+    r_cache.set('crawler:onion_filter:state', str(filter_enabled))
+    return filter_enabled
+
+def is_onion_filter_enabled(cache=True):
+    if cache:
+        res = r_cache.get('crawler:onion_filter:state')
+        if res is None:
+            enabled = _is_onion_filter_enabled()
+            r_cache.set('crawler:onion_filter:state', str(enabled))
+            return enabled
+        else:
+            return res == 'True'
+    else:
+        return _is_onion_filter_enabled()
+
+def get_onion_filter_last_update_time():
+    last_update_time = r_cache.get('crawler:onion_filter:last_update_time')
+    if not last_update_time:
+        last_update_time = r_crawler.hget('crawler:onion_filter', 'update_time')
+        if not last_update_time:
+            last_update_time = 0
+        last_update_time = float(last_update_time)
+        r_cache.set('crawler:onion_filter:last_update_time', last_update_time)
+    return float(last_update_time)
+
+def change_onion_filter_state(new_state):
+    old_state = is_onion_filter_enabled(cache=False)
+    if old_state != new_state:
+        r_crawler.hset('crawler:onion_filter', 'enabled', str(new_state))
+        r_cache.set('crawler:onion_filter:state', str(new_state))
+        update_time = time.time()
+        r_crawler.hset('crawler:onion_filter', 'update_time', update_time)
+        r_cache.set('crawler:onion_filter:last_update_time', update_time)
+        return True
+    return False
+
+# # Crawl Unknown Onion # #
+def _is_onion_filter_unknown():
+    unknown = r_crawler.hget('crawler:onion_filter', 'unknown')
+    if unknown is None:
+        r_crawler.hset('crawler:onion_filter', 'unknown', str(False))
+        filter_enabled = False
+    else:
+        filter_enabled = unknown == 'True'
+    r_cache.set('crawler:onion_filter:unknown', str(filter_enabled))
+    return filter_enabled
+
+def is_onion_filter_unknown(cache=True):
+    if cache:
+        res = r_cache.get('crawler:onion_filter:unknown')
+        if res is None:
+            unknown = _is_onion_filter_unknown()
+            r_cache.set('crawler:onion_filter:unknown', str(unknown))
+            return unknown
+        else:
+            return res == 'True'
+    else:
+        return _is_onion_filter_unknown()
+
+def change_onion_filter_unknown_state(new_state):
+    old_state = is_onion_filter_unknown(cache=False)
+    if old_state != new_state:
+        r_crawler.hset('crawler:onion_filter', 'unknown', str(new_state))
+        r_cache.set('crawler:onion_filter:unknown', str(new_state))
+        update_time = time.time()
+        r_crawler.hset('crawler:onion_filter', 'update_time', update_time)
+        r_cache.set('crawler:onion_filter:last_update_time', update_time)
+        return True
+    return False
+
+#### ---- ####
 
 
 # TODO MOVE ME IN CRAWLER OR FLASK
 load_blacklist()
 
 # if __name__ == '__main__':
-    # delete_captures()
-
-    # item_id = 'crawled/2023/02/20/data.gz'
-    # item = Item(item_id)
-    # content = item.get_content()
-    # temp_url = ''
-    # r = extract_favicon_from_html(content, temp_url)
-    # print(r)
-    # _reprocess_all_hars_cookie_name()
-    # _reprocess_all_hars_etag()
-    # _gzip_all_hars()
-    # _reprocess_all_hars_hhhashs()
+#     recrawl_onion_domains(date_month='202502', all_onions_up=False)
+#     delete_captures()
+#
+#     item_id = 'crawled/2023/02/20/data.gz'
+#     item = Item(item_id)
+#     content = item.get_content()
+#     temp_url = ''
+#     r = extract_favicon_from_html(content, temp_url)
+#     print(r)
+#     _reprocess_all_hars_cookie_name()
+#     _reprocess_all_hars_etag()
+#     _gzip_all_hars()
+#     _reprocess_all_hars_hhhashs()

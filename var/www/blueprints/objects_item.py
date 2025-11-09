@@ -6,6 +6,7 @@
 '''
 
 import difflib
+import json
 import os
 import sys
 
@@ -13,13 +14,14 @@ from flask import Flask, render_template, jsonify, request, Blueprint, redirect,
 from flask_login import login_required, current_user
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only, no_cache
+from Role_Manager import login_admin, login_user, login_read_only, no_cache
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
 from lib import ConfigLoader
+from lib import chats_viewer
 from lib import item_basic
 from lib.objects.Items import Item
 from lib.objects.Screenshots import Screenshot
@@ -27,6 +29,7 @@ from lib import Tag
 
 from lib import Investigations
 from lib import module_extractor
+from lib import images_engine
 
 
 # ============ BLUEPRINT ============
@@ -41,6 +44,9 @@ SCREENSHOT_FOLDER = ConfigLoader.get_screenshots_dir()
 config_loader = None
 
 # ============ FUNCTIONS ============
+
+def create_json_response(data, status_code):
+    return Response(json.dumps(data, indent=2, sort_keys=True), mimetype='application/json'), status_code
 
 
 # ============= ROUTES ==============
@@ -62,12 +68,23 @@ def screenshot(filename):
 @login_required
 @login_read_only
 def showItem():  # # TODO: support post
+    user_org = current_user.get_org()
     item_id = request.args.get('id')
     if not item_id or not item_basic.exist_item(item_id):
         abort(404)
 
     item = Item(item_id)
-    meta = item.get_meta(options={'content', 'crawler', 'duplicates', 'investigations', 'lines', 'size'})
+    meta = item.get_meta(options={'content', 'crawler', 'custom', 'duplicates', 'file_name', 'investigations', 'lines', 'size'})
+    if meta.get('custom'):
+        meta['custom'] = json.dumps(json.loads(meta['custom']), indent=2, sort_keys=True)
+    if meta['file_name']:
+        message = chats_viewer.api_get_message(item.get_message())
+        if message[1] == 200:
+            message = message[0]
+        else:
+            message = None
+    else:
+        message = None
 
     meta['name'] = meta['id'].replace('/', ' / ')
     meta['father'] = item_basic.get_item_parent(item_id)
@@ -76,22 +93,33 @@ def showItem():  # # TODO: support post
     # meta['hive_case'] = Export.get_item_hive_cases(item_id)
     meta['hive_case'] = None
 
+    ## screenshot
+    if 'crawler' in meta:
+        if meta['crawler']['screenshot']:
+            img = Screenshot(meta['crawler']['screenshot_id'])
+            meta['description'] = img.get_description()
+            meta['image_gid'] = img.get_global_id()
+
     if meta.get('investigations'):
         invests = []
         for investigation_uuid in meta['investigations']:
             inv = Investigations.Investigation(investigation_uuid)
+            if not inv.check_level(user_org):
+                continue
+
             invests.append(inv.get_metadata(r_str=True))
         meta['investigations'] = invests
     else:
         meta['investigations'] = []
 
-    extracted = module_extractor.extract(item.id, content=meta['content'])
+    extracted = module_extractor.extract(current_user.get_user_id(), 'item', '', item.id, content=meta['content'])
     extracted_matches = module_extractor.get_extracted_by_match(extracted)
 
     return render_template("show_item.html", bootstrap_label=bootstrap_label,
                            modal_add_tags=Tag.get_modal_add_tags(meta['id'], object_type='item'),
                            is_hive_connected=False,
-                           meta=meta,
+                           ollama_enabled=images_engine.is_ollama_enabled(),
+                           meta=meta, message=message,
                            extracted=extracted, extracted_matches=extracted_matches)
 
     # kvrocks data
@@ -102,7 +130,7 @@ def showItem():  # # TODO: support post
 
     ## Dynamic Path FIX
 
-@objects_item.route("/object/item/html2text")
+@objects_item.route("/objects/item/html2text")
 @login_required
 @login_read_only
 def html2text(): # # TODO: support post
@@ -112,7 +140,7 @@ def html2text(): # # TODO: support post
     item = Item(item_id)
     return item.get_html2text_content()
 
-@objects_item.route("/object/item/raw_content")
+@objects_item.route("/objects/item/raw_content")
 @login_required
 @login_read_only
 def item_raw_content(): # # TODO: support post
@@ -122,7 +150,7 @@ def item_raw_content(): # # TODO: support post
     item = Item(item_id)
     return Response(item.get_content(), mimetype='text/plain')
 
-@objects_item.route("/object/item/download")
+@objects_item.route("/objects/item/download")
 @login_required
 @login_read_only
 def item_download():  # # TODO: support post
@@ -132,7 +160,7 @@ def item_download():  # # TODO: support post
     item = Item(item_id)
     return send_file(item.get_raw_content(), download_name=item_id, as_attachment=True)
 
-@objects_item.route("/object/item/content/more")
+@objects_item.route("/objects/item/content/more")
 @login_required
 @login_read_only
 def item_content_more():
@@ -142,9 +170,9 @@ def item_content_more():
     to_return = item_content[max_preview_modal-1:]
     return to_return
 
-@objects_item.route("/object/item/diff")
+@objects_item.route("/objects/item/diff")
 @login_required
-@login_analyst
+@login_user
 def object_item_diff():
     id1 = request.args.get('s1', '')
     id2 = request.args.get('s2', '')
@@ -162,7 +190,7 @@ def object_item_diff():
     diff = htmldiff.make_file(lines1, lines2)
     return diff
 
-@objects_item.route("/object/item/preview")
+@objects_item.route("/objects/item/preview")
 @login_required
 @login_read_only
 def item_preview():
@@ -188,3 +216,35 @@ def item_preview():
                            misp_eventid=misp_eventid, misp_url=misp_url,
                            hive_caseid=hive_caseid, hive_url=hive_url)
 
+@objects_item.route("/image/describe")
+@login_required
+@login_read_only
+def image_describe():
+    gid = request.args.get('gid')
+    r = images_engine.api_get_image_description(gid)
+    if r[1] != 200:
+        return create_json_response(r[0], r[1])
+    else:
+        if request.referrer:
+            return redirect(request.referrer)
+        else:
+            # TODO
+            return 'NO REFERER:'
+            return redirect(url_for('chats_explorer.objects_message', id=message_id, target=target))
+
+
+@objects_item.route("/domain/describe")
+@login_required
+@login_read_only
+def domain_describe():
+    domain_id = request.args.get('id')
+    r = images_engine.get_domain_description(domain_id)
+    if r[1] != 200:
+        return create_json_response(r[0], r[1])
+    else:
+        if request.referrer:
+            return redirect(request.referrer)
+        else:
+            # TODO
+            return 'NO REFERER:'
+            return redirect(url_for('chats_explorer.objects_message', id=message_id, target=target))

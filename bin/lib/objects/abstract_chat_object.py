@@ -11,14 +11,14 @@ import sys
 import time
 from abc import ABC
 
-from datetime import datetime
+from datetime import datetime, timezone
 # from flask import url_for
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
-from lib.objects.abstract_subtype_object import AbstractSubtypeObject
+from lib.objects.abstract_subtype_object import AbstractSubtypeObject, AbstractSubtypeObjects
 from lib.ail_core import unpack_correl_objs_id, zscan_iter ################
 from lib.ConfigLoader import ConfigLoader
 from lib.objects import Messages
@@ -51,8 +51,6 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
     # get useraccount / username
     # get users ?
     # timeline name ????
-    # info
-    # created
     # last imported/updated
 
     # TODO get instance
@@ -97,7 +95,7 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
     def get_created_at(self, date=False):
         created_at = self._get_field('created_at')
         if date and created_at:
-            created_at = datetime.fromtimestamp(float(created_at))
+            created_at = datetime.utcfromtimestamp(float(created_at))
             created_at = created_at.isoformat(' ')
         return created_at
 
@@ -129,6 +127,12 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
 
     def get_nb_messages(self):
         return r_object.zcard(f'messages:{self.type}:{self.subtype}:{self.id}')
+
+    def get_message_page(self, message, nb):
+        rank = r_object.zrank(f'messages:{self.type}:{self.subtype}:{self.id}', f'message::{message}')
+        if not rank:
+            return -1
+        return int(rank/ nb) + 1
 
     def _get_messages(self, nb=-1, page=-1):
         if nb < 1:
@@ -162,10 +166,14 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
         return messages, {'nb': nb, 'page': page, 'nb_pages': nb_pages, 'total': total, 'nb_first': nb_first, 'nb_last': nb_last}
 
     def get_timestamp_first_message(self):
-        return r_object.zrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, 0, withscores=True)
+        first = r_object.zrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, 0, withscores=True)
+        if first:
+            return int(first[0][1])
 
     def get_timestamp_last_message(self):
-        return r_object.zrevrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, 0, withscores=True)
+        last = r_object.zrevrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, 0, withscores=True)
+        if last:
+            return int(last[0][1])
 
     def get_first_message(self):
         return r_object.zrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, 0)
@@ -176,7 +184,7 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
     def get_nb_message_by_hours(self, date_day, nb_day):
         hours = []
         # start=0, end=23
-        timestamp = time.mktime(datetime.strptime(date_day, "%Y%m%d").timetuple())
+        timestamp = time.mktime(datetime.strptime(date_day, "%Y%m%d").utctimetuple())
         for i in range(24):
             timestamp_end = timestamp + 3600
             nb_messages = r_object.zcount(f'messages:{self.type}:{self.subtype}:{self.id}', timestamp, timestamp_end)
@@ -197,14 +205,81 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
         week_date = Date.get_current_week_day()
         return self.get_nb_message_by_week(week_date)
 
+    def get_nb_week_messages(self):
+        week = {}
+        # Init
+        for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']:
+            week[day] = {}
+            for i in range(24):
+                week[day][i] = 0
+
+        # chat
+        for mess_t in r_object.zrange(f'messages:{self.type}:{self.subtype}:{self.id}', 0, -1, withscores=True):
+            timestamp = datetime.utcfromtimestamp(float(mess_t[1]))
+            date_name = timestamp.strftime('%a')
+            week[date_name][timestamp.hour] += 1
+
+        subchannels = self.get_subchannels()
+        for gid in subchannels:
+            for mess_t in r_object.zrange(f'messages:{gid}', 0, -1, withscores=True):
+                timestamp = datetime.utcfromtimestamp(float(mess_t[1]))
+                date_name = timestamp.strftime('%a')
+                week[date_name][timestamp.hour] += 1
+        stats = []
+        nb_day = 0
+        for day in week:
+            for hour in week[day]:
+                stats.append({'date': day, 'day': nb_day, 'hour': hour, 'count': week[day][hour]})
+            nb_day += 1
+        return stats
+
+    def get_message_years(self):
+        timestamp = self.get_timestamp_first_message()
+        if not timestamp:
+            year_start = int(self.get_first_seen()[0:4])
+            year_end = int(self.get_last_seen()[0:4])
+            return list(range(year_start, year_end + 1))
+        else:
+            timestamp = datetime.utcfromtimestamp(float(timestamp))
+            year_start = int(timestamp.strftime('%Y'))
+            timestamp = datetime.utcfromtimestamp(float(self.get_timestamp_last_message()))
+            year_end = int(timestamp.strftime('%Y'))
+            return list(range(year_start, year_end + 1))
+
+    def get_nb_year_messages(self, year):
+        nb_year = {}
+        nb_max = 0
+        start = int(datetime(year, 1, 1, 0, 0, 0, tzinfo=timezone.utc).timestamp())
+        end = int(datetime(year, 12, 31, 23, 59, 59, tzinfo=timezone.utc).timestamp())
+
+        for mess_t in r_object.zrangebyscore(f'messages:{self.type}:{self.subtype}:{self.id}', start, end, withscores=True):
+            timestamp = datetime.utcfromtimestamp(float(mess_t[1]))
+            date = timestamp.strftime('%Y-%m-%d')
+            if date not in nb_year:
+                nb_year[date] = 0
+            nb_year[date] += 1
+            nb_max = max(nb_max, nb_year[date])
+
+        subchannels = self.get_subchannels()
+        for gid in subchannels:
+            for mess_t in r_object.zrangebyscore(f'messages:{gid}', start, end, withscores=True):
+                timestamp = datetime.utcfromtimestamp(float(mess_t[1]))
+                date = timestamp.strftime('%Y-%m-%d')
+                if date not in nb_year:
+                    nb_year[date] = 0
+                nb_year[date] += 1
+                nb_max = max(nb_max, nb_year[date])
+
+        return nb_max, nb_year
+
     def get_message_meta(self, message, timestamp=None, translation_target='', options=None):  # TODO handle file message
         message = Messages.Message(message[9:])
         if not options:
-            options = {'content', 'files-names', 'images', 'link', 'parent', 'parent_meta', 'reactions', 'thread', 'translation', 'user-account'}
+            options = {'barcodes', 'content', 'files', 'files-names', 'forwarded_from', 'images', 'language', 'link', 'parent', 'parent_meta', 'qrcodes', 'reactions', 'thread', 'translation', 'user-account'}
         meta = message.get_meta(options=options, timestamp=timestamp, translation_target=translation_target)
         return meta
 
-    def get_messages(self, start=0, page=-1, nb=500, unread=False, options=None, translation_target='en'):  # threads ???? # TODO ADD last/first message timestamp + return page
+    def get_messages(self, start=0, page=-1, nb=500, message=None, unread=False, options=None, translation_target='en'):  # threads ???? # TODO ADD last/first message timestamp + return page
         # TODO return message meta
         tags = {}
         messages = {}
@@ -213,16 +288,19 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
             nb = int(nb)
         except TypeError:
             nb = 500
-        if not page:
-            page = -1
-        try:
-            page = int(page)
-        except TypeError:
-            page = 1
+        if message:
+            page = self.get_message_page(message, nb)
+        else:
+            if not page:
+                page = -1
+            try:
+                page = int(page)
+            except TypeError:
+                page = 1
         mess, pagination = self._get_messages(nb=nb, page=page)
         for message in mess:
             timestamp = message[1]
-            date_day = datetime.fromtimestamp(timestamp).strftime('%Y/%m/%d')
+            date_day = datetime.utcfromtimestamp(timestamp).strftime('%Y/%m/%d')
             if date_day != curr_date:
                 messages[date_day] = []
                 curr_date = date_day
@@ -258,6 +336,9 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
                 objs_global_id.append(obj_global_id)
         return objs_global_id
 
+    def add_chat_with_messages(self):
+        r_object.sadd(f'{self.type}_w_mess:{self.subtype}', self.id)
+
     def add_message(self, obj_global_id, message_id, timestamp, reply_id=None):
         r_object.hset(f'messages:ids:{self.type}:{self.subtype}:{self.id}', message_id, obj_global_id)
         r_object.zadd(f'messages:{self.type}:{self.subtype}:{self.id}', {obj_global_id: float(timestamp)})
@@ -275,16 +356,26 @@ class AbstractChatObject(AbstractSubtypeObject, ABC):
 
     # def get_deleted_messages(self, message_id):
 
+    def get_messages_by_lang(self, language):
+        messages = []
+        for mess in self.get_language_objs(language):
+            messages.append(mess[8:])
+        return messages
+
     def get_participants(self):
         return unpack_correl_objs_id('user-account', self.get_correlation('user-account')['user-account'], r_type='dict')
 
     def get_nb_participants(self):
         return self.get_nb_correlation('user-account')
 
+    def get_user_messages(self, user_id):
+        return self.get_correlation_iter('user-account', self.subtype, user_id, 'message')
+
 # TODO move me to abstract subtype
-class AbstractChatObjects(ABC):
-    def __init__(self, type):
-        self.type = type
+class AbstractChatObjects(AbstractSubtypeObjects, ABC):
+
+    def __init__(self, obj_type, obj_class):
+        super().__init__(obj_type, obj_class)
 
     def add_subtype(self, subtype):
         r_object.sadd(f'all_{self.type}:subtypes', subtype)

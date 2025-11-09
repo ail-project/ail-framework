@@ -9,39 +9,79 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib.exceptions import AILObjectUnknown
 
-
-
 from lib.ConfigLoader import ConfigLoader
-from lib.ail_core import get_all_objects, get_object_all_subtypes, get_objects_with_subtypes
+from lib.ail_core import get_all_objects, get_object_all_subtypes, get_objects_with_subtypes, get_default_correlation_objects
 from lib import correlations_engine
 from lib import relationships_engine
 from lib import btc_ail
+from lib import Language
 from lib import Tag
 
+from lib import chats_viewer
+
+from lib.objects import BarCodes
 from lib.objects import Chats
 from lib.objects import ChatSubChannels
 from lib.objects import ChatThreads
 from lib.objects import CryptoCurrencies
 from lib.objects import CookiesNames
-from lib.objects.Cves import Cve
-from lib.objects.Decodeds import Decoded, get_all_decodeds_objects, get_nb_decodeds_objects
-from lib.objects.Domains import Domain
+from lib.objects import Cves
+from lib.objects import Decodeds
+from lib.objects import Domains
 from lib.objects import Etags
 from lib.objects import Favicons
 from lib.objects import FilesNames
+from lib.objects import DomHashs
+from lib.objects import GTrackers
 from lib.objects import HHHashs
 from lib.objects.Items import Item, get_all_items_objects, get_nb_items_objects
 from lib.objects import Images
-from lib.objects.Messages import Message
+from lib.objects import IPAddresses
+from lib.objects import Mails
+from lib.objects import Messages
+from lib.objects import Ocrs
 from lib.objects import Pgps
-from lib.objects.Screenshots import Screenshot
+from lib.objects import QrCodes
+from lib.objects import Screenshots
+from lib.objects import SSHKeys
 from lib.objects import Titles
-from lib.objects.UsersAccount import UserAccount
+from lib.objects import UsersAccount
 from lib.objects import Usernames
 
-config_loader = ConfigLoader()
-
-config_loader = None
+# config_loader = ConfigLoader()
+#
+# config_loader = None
+# TODO INIT objs classes ????
+OBJECTS_CLASS = {
+    'barcode': {'obj': BarCodes.Barcode, 'objs': BarCodes.Barcodes},
+    'chat': {'obj': Chats.Chat, 'objs': Chats.Chats},
+    'chat-subchannel': {'obj': ChatSubChannels.ChatSubChannel, 'objs': None}, ######   ######
+    'chat-thread': {'obj': ChatThreads.ChatThread, 'objs': None},    ######   ######
+    'cookie-name': {'obj': CookiesNames.CookieName, 'objs': CookiesNames.CookiesNames},
+    'cve': {'obj': Cves.Cve, 'objs': Cves.Cves},
+    'cryptocurrency': {'obj': CryptoCurrencies.CryptoCurrency, 'objs': CryptoCurrencies.CryptoCurrencies},
+    'decoded': {'obj': Decodeds.Decoded, 'objs': Decodeds.Decodeds},
+    'domain': {'obj': Domains.Domain, 'objs': Domains.Domains},
+    'dom-hash': {'obj': DomHashs.DomHash, 'objs': DomHashs.DomHashs},
+    'etag': {'obj': Etags.Etag, 'objs': Etags.Etags},
+    'favicon': {'obj': Favicons.Favicon, 'objs': Favicons.Favicons},
+    'file-name': {'obj': FilesNames.FileName, 'objs': FilesNames.FilesNames},
+    'hhhash': {'obj': HHHashs.HHHash, 'objs': HHHashs.HHHashs},
+    'gtracker': {'obj': GTrackers.GTracker, 'objs': GTrackers.GTrackers},
+    'item': {'obj': Item, 'objs': None}, ####################################################################################################
+    'image': {'obj': Images.Image, 'objs': Images.Images},
+    'ip': {'obj': IPAddresses.IP, 'objs': IPAddresses.IPs},
+    'mail': {'obj': Mails.Mail, 'objs': Mails.Mails},
+    'message': {'obj': Messages.Message, 'objs': None}, #############################################################
+    'ocr': {'obj': Ocrs.Ocr, 'objs': Ocrs.Ocrs},
+    'pgp': {'obj': Pgps.Pgp, 'objs': Pgps.Pgps},
+    'qrcode': {'obj': QrCodes.Qrcode, 'objs': QrCodes.Qrcodes},
+    'screenshot': {'obj': Screenshots.Screenshot, 'objs': None}, ####################################################################################################
+    'ssh-key': {'obj': SSHKeys.SSHKey, 'objs': SSHKeys.SSHKeys},
+    'title': {'obj': Titles.Title, 'objs': Titles.Titles},
+    'user-account': {'obj': UsersAccount.UserAccount, 'objs': UsersAccount.UserAccounts},
+    'username': {'obj': Usernames.Username, 'objs': Usernames.Usernames},
+}
 
 
 def is_valid_object_type(obj_type):
@@ -53,65 +93,41 @@ def is_object_subtype(obj_type):
 def is_valid_object_subtype(obj_type, subtype):
     return subtype in get_object_all_subtypes(obj_type)
 
-def sanitize_objs_types(objs):
+def sanitize_objs_types(objs, default=False):
     l_types = []
     for obj in objs:
         if is_valid_object_type(obj):
             l_types.append(obj)
     if not l_types:
-        l_types = get_all_objects()
+        if default:
+            l_types = list(get_default_correlation_objects())
+        else:
+            l_types = list(get_all_objects())
     return l_types
+
 
 #### OBJECT ####
 
+def get_obj_class(obj_type):
+    if obj_type in OBJECTS_CLASS:
+        return OBJECTS_CLASS[obj_type]['obj']
+
+def get_objs_class(obj_type):
+    if obj_type in OBJECTS_CLASS:
+        return OBJECTS_CLASS[obj_type]['objs']
+
 def get_object(obj_type, subtype, obj_id):
+    if subtype == 'None':
+        subtype = None
+    obj_id = str(obj_id)
+    obj_class = OBJECTS_CLASS[obj_type]['obj']
+    if not obj_class:
+        raise AILObjectUnknown(f'Unknown AIL object: {obj_type} {subtype} {obj_id}')
     if not subtype:
-        if obj_type == 'item':
-            return Item(obj_id)
-        elif obj_type == 'domain':
-            return Domain(obj_id)
-        elif obj_type == 'decoded':
-            return Decoded(obj_id)
-        elif obj_type == 'cookie-name':
-            return CookiesNames.CookieName(obj_id)
-        elif obj_type == 'cve':
-            return Cve(obj_id)
-        elif obj_type == 'etag':
-            return Etags.Etag(obj_id)
-        elif obj_type == 'favicon':
-            return Favicons.Favicon(obj_id)
-        elif obj_type == 'file-name':
-            return FilesNames.FileName(obj_id)
-        elif obj_type == 'hhhash':
-            return HHHashs.HHHash(obj_id)
-        elif obj_type == 'image':
-            return Images.Image(obj_id)
-        elif obj_type == 'message':
-            return Message(obj_id)
-        elif obj_type == 'screenshot':
-            return Screenshot(obj_id)
-        elif obj_type == 'title':
-            return Titles.Title(obj_id)
-        else:
-            raise AILObjectUnknown(f'Unknown AIL object: {obj_type} {subtype} {obj_id}')
+        return obj_class(obj_id)
     # SUBTYPES
     else:
-        if obj_type == 'chat':
-            return Chats.Chat(obj_id, subtype)
-        elif obj_type == 'chat-subchannel':
-            return ChatSubChannels.ChatSubChannel(obj_id, subtype)
-        elif obj_type == 'chat-thread':
-            return ChatThreads.ChatThread(obj_id, subtype)
-        elif obj_type == 'cryptocurrency':
-            return CryptoCurrencies.CryptoCurrency(obj_id, subtype)
-        elif obj_type == 'pgp':
-            return Pgps.Pgp(obj_id, subtype)
-        elif obj_type == 'user-account':
-            return UserAccount(obj_id, subtype)
-        elif obj_type == 'username':
-            return Usernames.Username(obj_id, subtype)
-        else:
-            raise AILObjectUnknown(f'Unknown AIL object: {obj_type} {subtype} {obj_id}')
+        return obj_class(obj_id, subtype)
 
 def exists_obj(obj_type, subtype, obj_id):
     obj = get_object(obj_type, subtype, obj_id)
@@ -128,12 +144,12 @@ def api_get_object(obj_type, obj_subtype, obj_id):
     if not is_valid_object_type(obj_type):
         return {'status': 'error', 'reason': 'Invalid object type'}, 400
     if obj_subtype:
-        if not is_valid_object_subtype(obj_type, subtype):
+        if not is_valid_object_subtype(obj_type, obj_subtype):
             return {'status': 'error', 'reason': 'Invalid object subtype'}, 400
     obj = get_object(obj_type, obj_subtype, obj_id)
     if not obj.exists():
         return {'status': 'error', 'reason': 'Object Not Found'}, 404
-    options = {'chat', 'content', 'files-names', 'images', 'parent', 'parent_meta', 'reactions', 'thread', 'user-account'}
+    options = {'chat', 'content', 'created_at', 'files-names', 'icon', 'images', 'info', 'nb_participants', 'parent', 'parent_meta', 'reactions', 'thread', 'user-account', 'username', 'subchannels', 'threads'}
     return obj.get_meta(options=options), 200
 
 
@@ -152,6 +168,32 @@ def api_get_object_global_id(global_id):
     return api_get_object(obj_type, subtype, obj_id)
 
 #### --API-- ####
+
+
+#### OBJECTS ####
+
+def get_nb_objects_by_date(date):
+    objs = {}
+    for obj_type in get_all_objects():
+        objs_class = get_objs_class(obj_type)
+        if objs_class:
+            objs_class = objs_class()
+            objs[obj_type] = objs_class.get_nb_by_date(date)
+    return objs
+
+def get_nb_objects_dashboard(date, flask_context=True):
+    objs = {}
+    for obj_type in get_all_objects():
+        objs_class = get_objs_class(obj_type)
+        if objs_class:
+            objs_class = objs_class()
+            objs[obj_type] = {}
+            objs[obj_type]['nb'] = objs_class.get_nb_by_date(date)
+            objs[obj_type]['name'] = objs_class.get_name()
+            objs[obj_type]['icon'] = objs_class.get_icon()
+            objs[obj_type]['link'] = objs_class.get_link(flask_context=flask_context)
+    return objs
+
 
 #########################################################################################
 #########################################################################################
@@ -222,6 +264,15 @@ def add_obj_tags(obj_type, subtype, id, tags):
 
 # -TAGS- #
 
+#### OBJ META ####
+
+def get_obj_basic_meta(obj, flask_context=False):
+    meta = obj.get_default_meta(tags=True)
+    meta['icon'] = obj.get_svg_icon()
+    meta['link'] = obj.get_link(flask_context=flask_context)
+    meta['gid'] = obj.get_global_id()
+    return meta
+
 def get_object_meta(obj_type, subtype, id, options=set(), flask_context=False):
     obj = get_object(obj_type, subtype, id)
     meta = obj.get_meta(options=options)
@@ -249,12 +300,13 @@ def get_objects_meta(objs, options=set(), flask_context=False):
 
 def get_object_card_meta(obj_type, subtype, id, related_btc=False):
     obj = get_object(obj_type, subtype, id)
-    meta = obj.get_meta()
-    meta['icon'] = obj.get_svg_icon()
+    meta = obj.get_meta(options={'chat', 'chats', 'created_at', 'icon', 'info', 'map', 'nb_messages', 'nb_participants', 'threads', 'username'})
+    # meta['icon'] = obj.get_svg_icon()
+    meta['svg_icon'] = obj.get_svg_icon()
     if subtype or obj_type == 'cookie-name' or obj_type == 'cve' or obj_type == 'etag' or obj_type == 'title' or obj_type == 'favicon' or obj_type == 'hhhash':
         meta['sparkline'] = obj.get_sparkline()
         if obj_type == 'cve':
-            meta['cve_search'] = obj.get_cve_search()
+            meta['vulnerability_lookup'] = obj.get_vulnerability_lookup()
         # if obj_type == 'title':
         #     meta['cve_search'] = obj.get_cve_search()
     if subtype == 'bitcoin' and related_btc:
@@ -268,6 +320,34 @@ def get_object_card_meta(obj_type, subtype, id, related_btc=False):
     meta["add_tags_modal"] = Tag.get_modal_add_tags(obj.id, obj.get_type(), obj.get_subtype(r_str=True))
     return meta
 
+#### OBJ LANGUAGES ####
+
+def api_detect_language(obj_type, subtype, obj_id):
+    obj = get_object(obj_type, subtype, obj_id)
+    if not obj.exists():
+        return {"status": "error", "reason": "Unknown obj"}, 404
+    lang = obj.detect_language()
+    return {"language": lang}, 200
+
+def api_manually_translate(obj_type, subtype, obj_id, source, translation_target, translation):
+    obj = get_object(obj_type, subtype, obj_id)
+    if not obj.exists():
+        return {"status": "error", "reason": "Unknown obj"}, 404
+    if translation:
+        if len(translation) > 200000: # TODO REVIEW LIMIT
+            return {"status": "error", "reason": "Max Size reached"}, 400
+    all_languages = Language.get_translation_languages()
+    if source not in all_languages:
+        return {"status": "error", "reason": "Unknown source Language"}, 400
+    obj_language = obj.get_language()
+    if obj_language != source:
+        obj.edit_language(obj_language, source)
+    if translation:
+        if translation_target not in all_languages:
+            return {"status": "error", "reason": "Unknown target Language"}, 400
+        obj.set_translation(translation_target, translation)
+    # TODO SANITYZE translation
+    return None, 200
 
 #### OBJ FILTERS ####
 
@@ -288,11 +368,26 @@ def is_filtered(obj, filters):
 
 def obj_iterator(obj_type, filters):
     if obj_type == 'decoded':
-        return get_all_decodeds_objects(filters=filters)
+        return Decodeds.get_all_decodeds_objects(filters=filters)
+    elif obj_type == 'image':
+        return Images.get_all_images_objects(filters=filters)
+    elif obj_type == 'screenshot':
+        return Screenshots.get_screenshots_obj_iterator(filters=filters)
     elif obj_type == 'item':
         return get_all_items_objects(filters=filters)
     elif obj_type == 'pgp':
         return Pgps.get_all_pgps_objects(filters=filters)
+    elif obj_type == 'mail':
+        return Mails.Mails().get_iterator()
+    elif obj_type == 'message':
+        return chats_viewer.get_messages_iterator(filters=filters)
+    elif obj_type == 'ocr':
+        return chats_viewer.get_ocrs_iterator(filters=filters)
+    elif obj_type == 'title':
+        return Titles.Titles().get_iterator()
+    else:
+        return []
+
 
 def card_objs_iterators(filters):
     nb = 0
@@ -302,11 +397,15 @@ def card_objs_iterators(filters):
 
 def card_obj_iterator(obj_type, filters):
     if obj_type == 'decoded':
-        return get_nb_decodeds_objects(filters=filters)
+        return Decodeds.get_nb_decodeds_objects(filters=filters)
     elif obj_type == 'item':
         return get_nb_items_objects(filters=filters)
     elif obj_type == 'pgp':
         return Pgps.nb_all_pgps_objects(filters=filters)
+    elif obj_type == 'message':
+        return chats_viewer.get_nb_messages_iterator(filters=filters)
+    elif obj_type == 'ocr':
+        return chats_viewer.get_nb_ors_iterator(filters=filters)
 
 def get_ui_obj_tag_table_keys(obj_type): # TODO REMOVE ME
     """
@@ -332,8 +431,8 @@ def get_misp_objects(objs):
     for relation in get_objects_relationships(objs):
         obj_src = misp_objects[relation['src']]
         obj_dest = misp_objects[relation['dest']]
-        # print(relation['src'].get_id(), relation['dest'].get_id())
-        obj_src.add_reference(obj_dest.uuid, relation['relationship'], 'ail correlation')
+        if obj_src and obj_dest:
+            obj_src.add_reference(obj_dest.uuid, relation['relationship'], 'ail correlation')
     return misp_objects.values()
 
 # get misp relationship
@@ -392,6 +491,15 @@ def get_objects_relationship(obj1, obj2):
     elif 'screenshot' in obj_types:
         relationship = 'screenshot-of'
         src, dest = get_relationship_src_dest('screenshot', obj1, obj2)
+    elif 'cookie-name' in obj_types:
+        relationship = 'extracted-from' # TODO ######################################################## set-from
+        src, dest = get_relationship_src_dest('cookie-name', obj1, obj2)
+    elif 'favicon' in obj_types:
+        relationship = 'extracted-from' # TODO ######################################################## seen-from
+        src, dest = get_relationship_src_dest('favicon', obj1, obj2)
+    elif 'dom-hash' in obj_types:
+        relationship = 'extracted-from' # TODO ############################## fingerprint-of     fingerprinted-as
+        src, dest = get_relationship_src_dest('dom-hash', obj1, obj2)
     elif 'domain' in obj_types:
         relationship = 'extracted-from'
         src, dest = get_relationship_src_dest('domain', obj1, obj2)
@@ -519,23 +627,46 @@ def get_correlations_graph_node(obj_type, subtype, obj_id, filter_types=[], max_
 
 # --- CORRELATION --- #
 
+#### RELATIONSHIPS ####
+
+def get_relationships():
+    return relationships_engine.get_relationships()
+
+def sanitize_relationships(relationships):
+    return relationships_engine.sanitize_relationships(relationships)
 def get_obj_nb_relationships(obj_type, subtype, obj_id, filter_types=[]):
     obj = get_object(obj_type, subtype, obj_id)
     return obj.get_nb_relationships(filter=filter_types)
 
-def get_relationships_graph_node(obj_type, subtype, obj_id, filter_types=[], max_nodes=300, level=1,
+def get_relationships_graph_node(obj_type, subtype, obj_id, relationships=[], filter_types=[], max_nodes=300, level=1,
                                  objs_hidden=set(),
                                  flask_context=False):
     obj_global_id = get_obj_global_id(obj_type, subtype, obj_id)
-    nodes, links, meta = relationships_engine.get_relationship_graph(obj_global_id,
-                                                                    filter_types=filter_types,
-                                                                    max_nodes=max_nodes, level=level,
-                                                                    objs_hidden=objs_hidden)
+    nodes, links, meta = relationships_engine.get_relationship_graph(obj_global_id, relationships=relationships,
+                                                                     filter_types=filter_types,
+                                                                     max_nodes=max_nodes, level=level,
+                                                                     objs_hidden=objs_hidden)
     # print(meta)
     meta['objs'] = list(meta['objs'])
     return {"nodes": create_correlation_graph_nodes(nodes, obj_global_id, flask_context=flask_context),
             "links": links,
             "meta": meta}
+
+def get_chat_relationships_cord_graph(obj_type, subtype, obj_id):
+    if obj_type == 'chat':
+        obj_global_id = get_obj_global_id(obj_type, subtype, obj_id)
+        data = relationships_engine.get_chat_forward_stats(obj_global_id)
+        return data
+    return []
+
+def get_chat_relationships_mentions_cord_graph(obj_type, subtype, obj_id):
+    if obj_type == 'chat':
+        obj_global_id = get_obj_global_id(obj_type, subtype, obj_id)
+        data = relationships_engine.get_chat_mentions_stats(obj_global_id)
+        return data
+    return []
+
+# --- RELATIONSHIPS --- #
 
 
 # if __name__ == '__main__':

@@ -19,14 +19,12 @@ config_loader = None
 
 REGEX_USERNAME = re.compile(r'[0-9a-zA-z_]+')
 REGEX_JOIN_HASH = re.compile(r'[0-9a-zA-z-]+')
+USERNAME_CHARS = set("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_")
 
 ##  ##
 
-def save_item_correlation(username, item_id, item_date):
-    Username.save_item_correlation('telegram', username, item_id, item_date)
-
-def save_telegram_invite_hash(invite_hash, item_id):
-    r_obj.sadd('telegram:invite_code', f'{invite_hash};{item_id}')
+def save_telegram_invite_hash(invite_hash, obj_global_id):
+    r_obj.sadd('telegram:invite_code', f'{invite_hash};{obj_global_id}')
 
 def get_data_from_telegram_url(base_url, url_path):
     dict_url = {}

@@ -9,13 +9,13 @@ import os
 import sys
 
 from flask import Flask, render_template, jsonify, request, Blueprint, redirect, url_for, abort
-from flask_login import login_required, current_user, login_user, logout_user
+from flask_login import login_required
 
 sys.path.append('modules')
 import Flask_config
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only
+from Role_Manager import login_admin, login_user_no_api, login_read_only
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -57,7 +57,7 @@ def tags_taxonomy():
 
 @tags_ui.route('/tag/taxonomy/enable')
 @login_required
-@login_read_only
+@login_admin
 def taxonomy_enable():
     taxonomy = request.args.get('taxonomy')
     res = Tag.api_enable_taxonomy_tags({'taxonomy': taxonomy})
@@ -68,7 +68,7 @@ def taxonomy_enable():
 
 @tags_ui.route('/tag/taxonomy/disable')
 @login_required
-@login_read_only
+@login_admin
 def taxonomy_disable():
     taxonomy = request.args.get('taxonomy')
     res = Tag.api_disable_taxonomy_tags({'taxonomy': taxonomy})
@@ -79,7 +79,7 @@ def taxonomy_disable():
 
 @tags_ui.route('/tag/taxonomy/enable_tags')
 @login_required
-@login_read_only
+@login_admin
 def taxonomy_enable_tags():
     taxonomy = request.args.get('taxonomy')
     tags = request.args.getlist('tags')
@@ -119,7 +119,7 @@ def tags_galaxy_tag():
 
 @tags_ui.route('/tag/galaxy/enable')
 @login_required
-@login_read_only
+@login_admin
 def galaxy_enable():
     galaxy = request.args.get('galaxy')
     res = Tag.api_enable_galaxy_tags({'galaxy': galaxy})
@@ -130,7 +130,7 @@ def galaxy_enable():
 
 @tags_ui.route('/tag/galaxy/disable')
 @login_required
-@login_read_only
+@login_admin
 def galaxy_disable():
     galaxy = request.args.get('galaxy')
     res = Tag.api_disable_galaxy_tags({'galaxy': galaxy})
@@ -141,7 +141,7 @@ def galaxy_disable():
 
 @tags_ui.route('/tag/galaxy/enable_tags')
 @login_required
-@login_read_only
+@login_admin
 def galaxy_enable_tags():
     galaxy = request.args.get('galaxy')
     tags = request.args.getlist('tags')
@@ -156,11 +156,11 @@ def galaxy_enable_tags():
 @login_required
 @login_read_only
 def get_all_tags_enabled():
-    return jsonify(Tags.get_enabled_tags_with_synonyms_ui())
+    return jsonify(Tag.get_enabled_tags_with_synonyms_ui())
 
 @tags_ui.route('/tag/confirm')
 @login_required
-@login_read_only
+@login_user_no_api
 def tag_confirm():
     tag = request.args.get('tag')
     obj_type = request.args.get('type')
@@ -170,11 +170,15 @@ def tag_confirm():
     if not obj.exists():
         abort(404)
     Tag.confirm_tag(tag, obj)
-    return redirect(obj.get_link(flask_context=True))
+
+    if request.referrer:
+        return redirect(request.referrer)
+    else:
+        return redirect(obj.get_link(flask_context=True))
 
 @tags_ui.route('/tag/add_tags')
 @login_required
-@login_analyst
+@login_user_no_api
 def add_tags():
 
     tags = request.args.get('tags')
@@ -192,22 +196,27 @@ def add_tags():
     if res[1] != 200:
         return str(res[0])
 
-    return redirect(ail_objects.get_object_link(object_type, object_subtype, object_id, flask_context=True))
+    if request.referrer:
+        return redirect(request.referrer)
+    else:
+        return redirect(ail_objects.get_object_link(object_type, object_subtype, object_id, flask_context=True))
 
-@tags_ui.route('/tag/delete_tag')
+@tags_ui.route('/tag/delete_tag') # TODO FIX REQUEST PARAMETER
 @login_required
-@login_analyst
+@login_user_no_api
 def delete_tag():
-
-    object_type = request.args.get('object_type')
-    object_id = request.args.get('object_id')
-    subtype = '' # TODO: handle subtype object
+    object_type = request.args.get('type')
+    subtype = request.args.get('subtype', '')
+    object_id = request.args.get('id')
     tag = request.args.get('tag')
 
-    res = Tag.api_delete_obj_tags(tags=[tag], object_id=object_id, object_type=object_type)
+    res = Tag.api_delete_obj_tags(tags=[tag], object_id=object_id, object_type=object_type, subtype=subtype)
     if res[1] != 200:
         return str(res[0])
-    return redirect(ail_objects.get_object_link(object_type, subtype, object_id, flask_context=True))
+    if request.referrer:
+        return redirect(request.referrer)
+    else:
+        return redirect(ail_objects.get_object_link(object_type, subtype, object_id, flask_context=True))
 
 
 @tags_ui.route('/tag/get_all_tags')
@@ -284,6 +293,30 @@ def tags_search_messages():
     dict_tagged['date'] = Date.sanitise_date_range('', '', separator='-')
     return render_template("tags/search_obj_by_tags.html", bootstrap_label=bootstrap_label, dict_tagged=dict_tagged)
 
+@tags_ui.route('/tag/search/image')
+@login_required
+@login_read_only
+def tags_search_images():
+    object_type = 'image'
+    dict_tagged = {"object_type": object_type, "object_name": object_type.title() + "s"}
+    return render_template("tags/search_obj_by_tags.html", bootstrap_label=bootstrap_label, dict_tagged=dict_tagged)
+
+@tags_ui.route('/tag/search/ocr')
+@login_required
+@login_read_only
+def tags_search_ocrs():
+    object_type = 'ocr'
+    dict_tagged = {"object_type": object_type, "object_name": object_type.title() + "s"}
+    return render_template("tags/search_obj_by_tags.html", bootstrap_label=bootstrap_label, dict_tagged=dict_tagged)
+
+@tags_ui.route('/tag/search/qrcode')
+@login_required
+@login_read_only
+def tags_search_qrcodes():
+    object_type = 'qrcode'
+    dict_tagged = {"object_type": object_type, "object_name": object_type.title() + "s"}
+    return render_template("tags/search_obj_by_tags.html", bootstrap_label=bootstrap_label, dict_tagged=dict_tagged)
+
 @tags_ui.route('/tag/search/domain')
 @login_required
 @login_read_only
@@ -326,7 +359,12 @@ def get_obj_by_tags():
         date_from = date_from.replace('-', '')
     if date_to:
         date_to = date_to.replace('-', '')
+    date_today = Date.get_today_date_str()
+    if date_today == date_from == date_to:
+        date_from = None
+        date_to = None
 
+    # TODO REFACTOR ME
     # unpack tags
     list_tags = ltags.split(',')
     list_tag = []
@@ -349,7 +387,7 @@ def get_obj_by_tags():
     # print(dict_obj)
 
     if dict_obj['tagged_obj']:
-        dict_tagged = {"object_type": object_type, "object_name": object_type.title() + "s",
+        dict_tagged = {
                        "tagged_obj": [], "page": dict_obj['page'], "nb_pages": dict_obj['nb_pages'],
                        "nb_first_elem": dict_obj['nb_first_elem'], "nb_last_elem": dict_obj['nb_last_elem'],
                        "nb_all_elem": dict_obj['nb_all_elem']}
@@ -361,15 +399,19 @@ def get_obj_by_tags():
 
         dict_tagged['tab_keys'] = ail_objects.get_ui_obj_tag_table_keys(object_type)
 
-        if len(list_tag) == 1:
-            dict_tagged['current_tags'] = [ltags.replace('"', '\"')]
-        else:
-            dict_tagged['current_tags'] = list_tag
-        dict_tagged['current_tags_str'] = ltags
-
         # return jsonify(dict_tagged)
     else:
-        dict_tagged = {"object_type": object_type, "object_name": object_type.title() + "s"}
+        dict_tagged = {}
+        dict_tagged['tag_last_seen'] = Tag.get_tags_min_last_seen(list_tag, r_int=False)
+
+    dict_tagged['object_type'] = object_type
+    dict_tagged['object_name'] = f'{object_type.title()}s'
+
+    if len(list_tag) == 1:
+        dict_tagged['current_tags'] = [ltags.replace('"', '\"')]
+    else:
+        dict_tagged['current_tags'] = list_tag
+    dict_tagged['current_tags_str'] = ltags
 
     if 'date' in dict_obj:
         dict_tagged['date'] = dict_obj['date']
@@ -379,7 +421,7 @@ def get_obj_by_tags():
 
 @tags_ui.route("/tags/auto_push")
 @login_required
-@login_analyst
+@login_admin
 def auto_push():
 
     # TODO CHECK if misp or the hive connected
@@ -393,7 +435,7 @@ def auto_push():
 
 @tags_ui.route("/tags/auto_push_post", methods=['POST'])
 @login_required
-@login_analyst
+@login_admin
 def auto_push_post():
     tag_enabled_misp = request.form.getlist('tag_enabled_misp')
     tag_enabled_hive = request.form.getlist('tag_enabled_hive')
@@ -403,28 +445,28 @@ def auto_push_post():
 
 @tags_ui.route("/tags/auto_push/misp/enable")
 @login_required
-@login_analyst
+@login_admin
 def enable_misp_auto_push():
     Tag.enable_auto_push('misp')
     return redirect(url_for('tags_ui.auto_push'))
 
 @tags_ui.route("/tags/auto_push/misp/disable")
 @login_required
-@login_analyst
+@login_admin
 def disable_misp_auto_push():
     Tag.disable_auto_push('misp')
     return redirect(url_for('tags_ui.auto_push'))
 
 @tags_ui.route("/tags/auto_push/thehive/enable")
 @login_required
-@login_analyst
+@login_admin
 def enable_hive_auto_push():
     Tag.enable_auto_push('thehive')
     return redirect(url_for('tags_ui.auto_push'))
 
 @tags_ui.route("/tags/auto_push/thehive/disable")
 @login_required
-@login_analyst
+@login_admin
 def disable_hive_auto_push():
     Tag.disable_auto_push('thehive')
     return redirect(url_for('tags_ui.auto_push'))

@@ -10,13 +10,13 @@ import sys
 import json
 
 from flask import render_template, jsonify, request, Blueprint, redirect, url_for, Response, abort
-from flask_login import login_required, current_user, login_user, logout_user
+from flask_login import login_required, current_user
 
 sys.path.append('modules')
 import Flask_config
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only
+from Role_Manager import login_admin, login_org_admin, login_user, login_user_no_api, login_read_only
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -24,6 +24,7 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib import ail_core
 from lib.objects import ail_objects
+from lib import chats_viewer
 from lib import item_basic
 from lib import Tracker
 from lib import Tag
@@ -44,6 +45,10 @@ def api_validator(api_response):
         return Response(json.dumps(api_response[0], indent=2, sort_keys=True), mimetype='application/json'), api_response[1]
 
 def create_json_response(data, status_code):
+    if status_code == 403:
+        abort(403)
+    elif status_code == 404:
+        abort(404)
     return Response(json.dumps(data, indent=2, sort_keys=True), mimetype='application/json'), status_code
 
 # ============= ROUTES ==============
@@ -64,92 +69,119 @@ def get_default_yara_rule_content():
 @login_required
 @login_read_only
 def trackers_dashboard():
-    user_id = current_user.get_id()  # TODO
-    trackers = Tracker.get_trackers_dashboard()
-    stats = Tracker.get_trackers_stats(user_id)
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    trackers = Tracker.get_trackers_dashboard(user_org, user_id)
+    for t in trackers:
+        t['obj'] = ail_objects.get_obj_basic_meta(ail_objects.get_obj_from_global_id(t['obj']))
+    stats = Tracker.get_trackers_stats(user_org, user_id)
     return render_template("trackers_dashboard.html", trackers=trackers, stats=stats, bootstrap_label=bootstrap_label)
 
 @hunters.route("/trackers/all")
 @login_required
 @login_read_only
 def tracked_menu():
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org())
     user_trackers = Tracker.get_user_trackers_meta(user_id)
     global_trackers = Tracker.get_global_trackers_meta()
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label)
 
 @hunters.route("/trackers/word")
 @login_required
 @login_read_only
 def tracked_menu_word():
     tracker_type = 'word'
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org(), tracker_type='word')
     user_trackers = Tracker.get_user_trackers_meta(user_id, tracker_type='word')
     global_trackers = Tracker.get_global_trackers_meta(tracker_type='word')
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
 
 @hunters.route("/trackers/set")
 @login_required
 @login_read_only
 def tracked_menu_set():
     tracker_type = 'set'
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org(), tracker_type=tracker_type)
     user_trackers = Tracker.get_user_trackers_meta(user_id, tracker_type=tracker_type)
     global_trackers = Tracker.get_global_trackers_meta(tracker_type=tracker_type)
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
 
 @hunters.route("/trackers/regex")
 @login_required
 @login_read_only
 def tracked_menu_regex():
     tracker_type = 'regex'
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org(), tracker_type=tracker_type)
     user_trackers = Tracker.get_user_trackers_meta(user_id, tracker_type=tracker_type)
     global_trackers = Tracker.get_global_trackers_meta(tracker_type=tracker_type)
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
 
 @hunters.route("/trackers/yara")
 @login_required
 @login_read_only
 def tracked_menu_yara():
     tracker_type = 'yara'
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org(), tracker_type=tracker_type)
     user_trackers = Tracker.get_user_trackers_meta(user_id, tracker_type=tracker_type)
     global_trackers = Tracker.get_global_trackers_meta(tracker_type=tracker_type)
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers, bootstrap_label=bootstrap_label, tracker_type=tracker_type)
 
 @hunters.route("/trackers/typosquatting")
 @login_required
 @login_read_only
 def tracked_menu_typosquatting():
     tracker_type = 'typosquatting'
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    org_trackers = Tracker.get_org_trackers_meta(current_user.get_org(), tracker_type=tracker_type)
     user_trackers = Tracker.get_user_trackers_meta(user_id, tracker_type=tracker_type)
     global_trackers = Tracker.get_global_trackers_meta(tracker_type=tracker_type)
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=global_trackers,
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=global_trackers,
                            bootstrap_label=bootstrap_label, tracker_type=tracker_type)
 
 @hunters.route("/trackers/admin")
 @login_required
 @login_admin
 def tracked_menu_admin():
-    user_trackers = Tracker.get_users_trackers_meta()
-    return render_template("trackersManagement.html", user_trackers=user_trackers, global_trackers=[],
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    org_trackers = Tracker.get_orgs_trackers_meta(user_org)
+    user_trackers = Tracker.get_users_trackers_meta(user_id)
+    return render_template("trackersManagement.html", user_trackers=user_trackers, org_trackers=org_trackers, global_trackers=[],
                            bootstrap_label=bootstrap_label)
 
 
-@hunters.route("/tracker/show")
+@hunters.route("/tracker/show", methods=['GET', 'POST'])
 @login_required
 @login_read_only
 def show_tracker():
-    user_id = current_user.get_id()
-    tracker_uuid = request.args.get('uuid', None)
-    res = Tracker.api_is_allowed_to_edit_tracker(tracker_uuid, user_id)
-    if res[1] != 200:  # invalid access
-        return Response(json.dumps(res[0], indent=2, sort_keys=True), mimetype='application/json'), res[1]
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+    filter_obj_types = []
 
-    date_from = request.args.get('date_from')
-    date_to = request.args.get('date_to')
+    if request.method == 'POST':
+        tracker_uuid = request.form.get('tracker_uuid', None)
+        date_from = request.form.get('date_from')
+        date_to = request.form.get('date_to')
+        for obj_type in Tracker.get_objects_tracked():
+            new_filter = request.form.get(f'{obj_type}_obj')
+            if new_filter:
+                filter_obj_types.append(obj_type)
+        if sorted(filter_obj_types) == list(Tracker.get_objects_tracked()):
+            filter_obj_types = []
+    else:
+        tracker_uuid = request.args.get('uuid', None)
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+
+    res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'view')
+    if res:  # invalid access
+        return Response(json.dumps(res[0], indent=2, sort_keys=True), mimetype='application/json'), res[1]
 
     if date_from:
         date_from = date_from.replace('-', '')
@@ -157,8 +189,9 @@ def show_tracker():
         date_to = date_to.replace('-', '')
 
     tracker = Tracker.Tracker(tracker_uuid)
-    meta = tracker.get_meta(options={'description', 'level', 'mails', 'filters', 'sparkline', 'tags',
-                                     'user', 'webhook', 'nb_objs'})
+    meta = tracker.get_meta(options={'description', 'level', 'mails', 'org', 'org_name', 'filters', 'sparkline', 'tags',
+                                     'filter_duplicate_notification',
+                                     'user', 'webhooks', 'nb_objs', 'years'})
 
     if meta['type'] == 'yara':
         yara_rule_content = Tracker.get_yara_rule_content(meta['tracked'])
@@ -173,8 +206,8 @@ def show_tracker():
 
     if date_from:
         date_from, date_to = Date.sanitise_daterange(date_from, date_to)
-        objs = tracker.get_objs_by_daterange(date_from, date_to)
-        meta['objs'] = ail_objects.get_objects_meta(objs, flask_context=True)
+        objs = tracker.get_objs_by_daterange(date_from, date_to, filter_obj_types)
+        meta['objs'] = ail_objects.get_objects_meta(objs, options={'last_full_date'}, flask_context=True)
     else:
         date_from = ''
         date_to = ''
@@ -187,9 +220,31 @@ def show_tracker():
         meta['filters'] = json.dumps(meta['filters'], indent=4)
 
     return render_template("tracker_show.html", meta=meta,
-                           rule_content=yara_rule_content,
-                           typo_squatting=typo_squatting,
-                           bootstrap_label=bootstrap_label)
+                            rule_content=yara_rule_content,
+                            typo_squatting=typo_squatting,
+                            filter_obj_types=filter_obj_types,
+                            bootstrap_label=bootstrap_label)
+
+@hunters.route("/tracker/show/stats/year", methods=['GET'])
+@login_required
+@login_read_only
+def tracker_show_stats_year():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+
+    tracker_uuid = request.args.get('uuid', None)
+    year = request.args.get('year')
+
+    res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'view')
+    if res:  # invalid access
+        return Response(json.dumps(res[0], indent=2, sort_keys=True), mimetype='application/json'), res[1]
+
+    stats = Tracker.api_get_nb_year_tracker(tracker_uuid, year)
+    if stats[1] != 200:
+        return create_json_response(stats[0], stats[1])
+    else:
+        return jsonify(stats[0])
 
 def parse_add_edit_request(request_form):
     to_track = request_form.get("tracker")
@@ -200,6 +255,7 @@ def parse_add_edit_request(request_form):
     webhook = request_form.get("webhook", '')
     level = request_form.get("level", 0)
     mails = request_form.get("mails", [])
+    notification_filter_duplicate = request_form.get('notification_filter_duplicate', False)
 
     # TAGS
     tags = request_form.get("tags", [])
@@ -232,6 +288,8 @@ def parse_add_edit_request(request_form):
     # YARA #
     if tracker_type == 'yara':
         yara_default_rule = request_form.get("yara_default_rule")
+        if yara_default_rule == 'Select a default rule':
+            yara_default_rule = None
         yara_custom_rule = request_form.get("yara_custom_rule")
         if yara_custom_rule:
             to_track = yara_custom_rule
@@ -240,14 +298,15 @@ def parse_add_edit_request(request_form):
             to_track = yara_default_rule
             tracker_type = 'yara_default'
 
-    if level == 'on':
-        level = 1
-    else:
-        level = 0
+    level = int(level)
     if mails:
         mails = mails.split()
     else:
         mails = []
+    if notification_filter_duplicate == 'on':
+        notification_filter_duplicate = True
+    else:
+        notification_filter_duplicate = False
 
     # FILTERS
     filters = {}
@@ -265,6 +324,10 @@ def parse_add_edit_request(request_form):
             if sources:
                 sources = json.loads(sources)
                 filters[obj_type]['sources'] = sources
+            excludes = request_form.get(f'sources_{obj_type}_exclude', [])
+            if excludes:
+                excludes = json.loads(excludes)
+                filters[obj_type]['excludes'] = excludes
             # Subtypes
             for obj_subtype in ail_core.get_object_all_subtypes(obj_type):
                 subtype = request_form.get(f'filter_{obj_type}_{obj_subtype}')
@@ -275,6 +338,7 @@ def parse_add_edit_request(request_form):
 
     input_dict = {"tracked": to_track, "type": tracker_type,
                   "tags": tags, "mails": mails, "filters": filters,
+                  "notification_filter_duplicate" : notification_filter_duplicate,
                   "level": level, "description": description, "webhook": webhook}
     if tracker_uuid:
         input_dict['uuid'] = tracker_uuid
@@ -287,44 +351,55 @@ def parse_add_edit_request(request_form):
 
 @hunters.route("/tracker/add", methods=['GET', 'POST'])
 @login_required
-@login_analyst
+@login_user_no_api
 def add_tracked_menu():
     if request.method == 'POST':
         input_dict = parse_add_edit_request(request.form)
-        user_id = current_user.get_id()
-        res = Tracker.api_add_tracker(input_dict, user_id)
+        user_id = current_user.get_user_id()
+        org = current_user.get_org()
+        res = Tracker.api_add_tracker(input_dict, org, user_id)
         if res[1] == 200:
             return redirect(url_for('hunters.trackers_dashboard'))
         else:
             return create_json_response(res[0], res[1])
     else:
         return render_template("tracker_add.html",
+                               dict_tracker={},
                                all_sources=item_basic.get_all_items_sources(r_list=True),
                                tags_selector_data=Tag.get_tags_selector_data(),
                                all_yara_files=Tracker.get_all_default_yara_files())
 
 @hunters.route("/tracker/edit", methods=['GET', 'POST'])
 @login_required
-@login_analyst
+@login_user_no_api
 def tracker_edit():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
     if request.method == 'POST':
         input_dict = parse_add_edit_request(request.form)
-        user_id = current_user.get_id()
-        res = Tracker.api_edit_tracker(input_dict, user_id)
+        res = Tracker.api_edit_tracker(input_dict, user_org, user_id, user_role)
         if res[1] == 200:
             return redirect(url_for('hunters.show_tracker', uuid=res[0].get('uuid')))
+        else:
+            return create_json_response(res[0], res[1])
     else:
-        user_id = current_user.get_id()
         tracker_uuid = request.args.get('uuid', None)
-        res = Tracker.api_is_allowed_to_edit_tracker(tracker_uuid, user_id)
-        if res[1] != 200:  # invalid access
-            return Response(json.dumps(res[0], indent=2, sort_keys=True), mimetype='application/json'), res[1]
+        res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'edit')
+        if res:  # invalid access
+            return create_json_response(res[0], res[1])
 
         tracker = Tracker.Tracker(tracker_uuid)
-        dict_tracker = tracker.get_meta(options={'description', 'level', 'mails', 'filters', 'tags', 'webhook'})
+        dict_tracker = tracker.get_meta(options={'description', 'filter_duplicate_notification', 'level', 'mails', 'filters', 'tags', 'webhooks'})
         if dict_tracker['type'] == 'yara':
             if not Tracker.is_default_yara_rule(dict_tracker['tracked']):
                 dict_tracker['content'] = Tracker.get_yara_rule_content(dict_tracker['tracked'])
+        elif dict_tracker['type'] == 'set':
+            tracked, nb_words = dict_tracker['tracked'].rsplit(';', 1)
+            tracked = tracked.replace(',', ' ')
+            dict_tracker['tracked'] = tracked
+            dict_tracker['nb_words'] = nb_words
+
         taxonomies_tags, galaxies_tags, custom_tags = Tag.sort_tags_taxonomies_galaxies_customs(dict_tracker['tags'])
         tags_selector_data = Tag.get_tags_selector_data()
         tags_selector_data['taxonomies_tags'] = taxonomies_tags
@@ -338,11 +413,13 @@ def tracker_edit():
 
 @hunters.route('/tracker/delete', methods=['GET'])
 @login_required
-@login_analyst
+@login_user_no_api
 def tracker_delete():
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
     tracker_uuid = request.args.get('uuid')
-    res = Tracker.api_delete_tracker({'uuid': tracker_uuid}, user_id)
+    res = Tracker.api_delete_tracker({'uuid': tracker_uuid}, user_org, user_id, user_role)
     if res[1] != 200:
         return create_json_response(res[0], res[1])
     else:
@@ -353,9 +430,11 @@ def tracker_delete():
 @login_required
 @login_read_only
 def get_json_tracker_graph():
-    user_id = current_user.get_id()
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
     tracker_uuid = request.args.get('uuid')
-    res = Tracker.api_check_tracker_acl(tracker_uuid, user_id)
+    res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'view')
     if res:
         return create_json_response(res[0], res[1])
 
@@ -372,6 +451,85 @@ def get_json_tracker_graph():
         res = Tracker.get_trackers_graph_by_day([tracker_uuid])
     return jsonify(res)
 
+@hunters.route('/tracker/object/add', methods=['GET'])
+@login_required
+@login_user
+def tracker_object_add():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+    tracker_uuid = request.args.get('uuid')
+    object_global_id = request.args.get('gid')
+    if object_global_id.startswith('messages::'):
+        obj = ail_objects.get_obj_from_global_id(object_global_id)
+        date = obj.get_date()
+    else:
+        date = request.args.get('date')  # TODO check daterange
+    res = Tracker.api_tracker_add_object({'uuid': tracker_uuid, 'gid': object_global_id, 'date': date}, user_org, user_id, user_role)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    else:
+        if request.referrer:
+            return redirect(request.referrer)
+        else:
+            return redirect(url_for('hunters.show_tracker', uuid=tracker_uuid))
+
+@hunters.route('/tracker/object/remove', methods=['GET'])
+@login_required
+@login_user_no_api
+def tracker_object_remove():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+    tracker_uuid = request.args.get('uuid')
+    object_global_id = request.args.get('gid')
+    res = Tracker.api_tracker_remove_object({'uuid': tracker_uuid, 'gid': object_global_id}, user_org, user_id, user_role)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    else:
+        if request.referrer:
+            return redirect(request.referrer)
+        else:
+            return redirect(url_for('hunters.show_tracker', uuid=tracker_uuid))
+
+
+@hunters.route('/tracker/objects', methods=['GET'])
+@login_required
+@login_admin
+def tracker_objects():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+    tracker_uuid = request.args.get('uuid', None)
+    res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'edit')
+    if res:  # invalid access
+        return create_json_response(res[0], res[1])
+
+    tracker = Tracker.Tracker(tracker_uuid)
+    meta = tracker.get_meta(options={'description', 'sparkline', 'tags', 'nb_objs'})
+    if meta['type'] == 'yara':
+        yara_rule_content = Tracker.get_yara_rule_content(meta['tracked'])
+    else:
+        yara_rule_content = None
+
+    chats, messages = chats_viewer.get_message_report(tracker.get_objs())
+
+    meta['date'] = Date.get_current_utc_full_time()
+
+    return render_template("messages_report.html", meta=meta, yara_rule_content=yara_rule_content,
+                           # ollama_enabled=images_engine.is_ollama_enabled(),
+                           chats=chats, messages=messages, bootstrap_label=bootstrap_label)
+
+    # TODO
+
+    # Manual - Title
+    #        - Summary
+
+    # Messages table
+
+    # Timeline messages by chats - line
+    # pie charts NB messages all chats
+    # Barchart NB messages by days
 
 ####################
 #    RETRO HUNT    #
@@ -381,34 +539,50 @@ def get_json_tracker_graph():
 @login_required
 @login_read_only
 def retro_hunt_all_tasks():
-    retro_hunts = Tracker.get_retro_hunt_metas()
-    return render_template("retro_hunt_tasks.html", retro_hunts=retro_hunts, bootstrap_label=bootstrap_label)
+    user_org = current_user.get_org()
+    retro_hunts_global = Tracker.get_retro_hunt_metas(Tracker.get_retro_hunts_global())
+    retro_hunts_org = Tracker.get_retro_hunt_metas(Tracker.get_retro_hunts_org(user_org))
+    return render_template("retro_hunt_tasks.html", retro_hunts_global=retro_hunts_global, retro_hunts_org=retro_hunts_org, bootstrap_label=bootstrap_label)
+
+@hunters.route('/retro_hunt/tasks/admin', methods=['GET'])
+@login_required
+@login_admin
+def retro_hunt_all_tasks_admin():
+    retro_hunts_org = Tracker.get_retro_hunt_metas(Tracker.get_retro_hunts_orgs())
+    return render_template("retro_hunt_tasks.html", retro_hunts_global=[], retro_hunts_org=retro_hunts_org, bootstrap_label=bootstrap_label)
 
 @hunters.route('/retro_hunt/task/show', methods=['GET'])
 @login_required
 @login_read_only
 def retro_hunt_show_task():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    user_role = current_user.get_role()
+
     task_uuid = request.args.get('uuid', None)
     objs = request.args.get('objs', False)
 
-    date_from_item = request.args.get('date_from')
-    date_to_item = request.args.get('date_to')
-    if date_from_item:
-        date_from_item = date_from_item.replace('-', '')
-    if date_to_item:
-        date_to_item = date_to_item.replace('-', '')
+    # date_from_item = request.args.get('date_from')
+    # date_to_item = request.args.get('date_to')
+    # if date_from_item:
+    #     date_from_item = date_from_item.replace('-', '')
+    # if date_to_item:
+    #     date_to_item = date_to_item.replace('-', '')
 
     res = Tracker.api_check_retro_hunt_task_uuid(task_uuid)
     if res:
         return create_json_response(res[0], res[1])
-
     retro_hunt = Tracker.RetroHunt(task_uuid)
-    dict_task = retro_hunt.get_meta(options={'creator', 'date', 'description', 'progress', 'filters', 'nb_objs', 'tags'})
+    res = Tracker.api_check_retro_hunt_acl(retro_hunt, user_org, user_id, user_role, 'view')
+    if res:
+        return res
+
+    dict_task = retro_hunt.get_meta(options={'creator', 'date', 'description', 'level', 'org', 'org_name', 'progress', 'filters', 'nb_objs', 'tags'})
     rule_content = Tracker.get_yara_rule_content(dict_task['rule'])
     dict_task['filters'] = json.dumps(dict_task['filters'], indent=4)
 
     if objs:
-        dict_task['objs'] = ail_objects.get_objects_meta(retro_hunt.get_objs(), flask_context=True)
+        dict_task['objs'] = ail_objects.get_objects_meta(retro_hunt.get_objs(), options={'last_full_date'}, flask_context=True)
     else:
         dict_task['objs'] = []
 
@@ -419,9 +593,10 @@ def retro_hunt_show_task():
 
 @hunters.route('/retro_hunt/add', methods=['GET', 'POST'])
 @login_required
-@login_analyst
+@login_user
 def retro_hunt_add_task():
     if request.method == 'POST':
+        level = request.form.get("level", 1)
         name = request.form.get("name", '')
         description = request.form.get("description", '')
         timeout = request.form.get("timeout", 30)
@@ -499,14 +674,15 @@ def retro_hunt_add_task():
             rule = yara_default_rule
             rule_type='yara_default'
 
-        user_id = current_user.get_id()
+        user_org = current_user.get_org()
+        user_id = current_user.get_user_id()
 
-        input_dict = {"name": name, "description": description, "creator": user_id,
+        input_dict = {"level": level, "name": name, "description": description, "creator": user_id,
                       "rule": rule, "type": rule_type,
                       "tags": tags, "filters": filters, "timeout": timeout,  # "mails": mails
                       }
 
-        res = Tracker.api_create_retro_hunt_task(input_dict, user_id)
+        res = Tracker.api_create_retro_hunt_task(input_dict, user_org, user_id)
         if res[1] == 200:
             return redirect(url_for('hunters.retro_hunt_all_tasks'))
         else:
@@ -520,33 +696,84 @@ def retro_hunt_add_task():
 
 @hunters.route('/retro_hunt/task/pause', methods=['GET'])
 @login_required
-@login_analyst
+@login_user
 def retro_hunt_pause_task():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    user_role = current_user.get_role()
     task_uuid = request.args.get('uuid', None)
-    res = Tracker.api_pause_retro_hunt_task(task_uuid)
+    res = Tracker.api_pause_retro_hunt_task(user_org, user_id, user_role, task_uuid)
     if res[1] != 200:
         return create_json_response(res[0], res[1])
     return redirect(url_for('hunters.retro_hunt_all_tasks'))
 
 @hunters.route('/retro_hunt/task/resume', methods=['GET'])
 @login_required
-@login_analyst
+@login_user
 def retro_hunt_resume_task():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    user_role = current_user.get_role()
     task_uuid = request.args.get('uuid', None)
-    res = Tracker.api_resume_retro_hunt_task(task_uuid)
+    res = Tracker.api_resume_retro_hunt_task(user_org, user_id, user_role, task_uuid)
     if res[1] != 200:
         return create_json_response(res[0], res[1])
     return redirect(url_for('hunters.retro_hunt_all_tasks'))
 
 @hunters.route('/retro_hunt/task/delete', methods=['GET'])
 @login_required
-@login_analyst
+@login_admin
 def retro_hunt_delete_task():
+    user_org = current_user.get_org()
+    user_id = current_user.get_id()
+    user_role = current_user.get_role()
     task_uuid = request.args.get('uuid', None)
-    res = Tracker.api_delete_retro_hunt_task(task_uuid)
+    res = Tracker.api_delete_retro_hunt_task(user_org, user_id, user_role, task_uuid)
     if res[1] != 200:
         return create_json_response(res[0], res[1])
     return redirect(url_for('hunters.retro_hunt_all_tasks'))
+
+
+@hunters.route('/retro_hunt/objects/report', methods=['GET'])
+@login_required
+@login_admin
+def retro_hunt_objects_report():
+    user_id = current_user.get_user_id()
+    user_org = current_user.get_org()
+    user_role = current_user.get_role()
+    task_uuid = request.args.get('uuid', None)
+    res = Tracker.api_check_retro_hunt_task_uuid(task_uuid)
+    if res:
+        return create_json_response(res[0], res[1])
+    retro_hunt = Tracker.RetroHunt(task_uuid)
+    res = Tracker.api_check_retro_hunt_acl(retro_hunt, user_org, user_id, user_role, 'view')
+    if res:
+        return res
+
+    meta = retro_hunt.get_meta(options={'creator', 'date', 'description', 'progress', 'filters', 'nb_objs', 'tags'})
+    yara_rule_content = Tracker.get_yara_rule_content(meta['rule'])
+    meta['filters'] = json.dumps(meta['filters'], indent=4)
+
+    # tracker = Tracker.Tracker(tracker_uuid)
+    # meta = tracker.get_meta(options={'description', 'sparkline', 'tags', 'nb_objs'})
+
+    chats, messages = chats_viewer.get_message_report(retro_hunt.get_objs())
+    if messages:
+        meta['first_seen'] = messages[0]['full_date']
+        if len(messages) > 1:
+            meta['last_seen'] = messages[-1]['full_date']
+        else:
+            meta['last_seen'] = meta['first_seen']
+
+    meta['date'] = Date.get_current_utc_full_time()
+    meta['type'] = 'retro_hunt'
+
+    # TODO
+    #       - Filter duplicates messages
+    #       - numbers of messages by chats
+
+    return render_template("messages_report.html", meta=meta, yara_rule_content=yara_rule_content,
+                           chats=chats, messages=messages, bootstrap_label=bootstrap_label, force_full_image=True)
 
 
 ##  - -  ##

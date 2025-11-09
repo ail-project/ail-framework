@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>User Profile - AIL</title>
+	<link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png') }}">
+
+  <!-- Core CSS -->
+	<link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet">
+
+  <!-- JS -->
+	<script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/popper.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.dataTables.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js')}}"></script>
+
+</head>
+<body>
+
+{% include 'nav_bar.html' %}
+	<div class="container-fluid">
+		<div class="row">
+			{% include 'settings/menu_sidebar.html' %}
+
+			<div class="col-12 col-lg-10" id="core_content">
+
+				<div class="card mb-3 mt-1">
+					<div class="card-header text-white bg-dark pb-1">
+						<h5 class="card-title">My Profile :</h5>
+					</div>
+					<div class="card-body">
+
+                        <div class="row">
+                            <div class="col-xl-6">
+                                <div class="card text-center border-secondary">
+                                    <div class="card-body px-1 py-0">
+                                        <table class="table table-sm">
+                                            <tbody>
+                                            <tr>
+                                                <td>Email</td>
+                                                <td>{{meta['id']}}</td>
+                                            </tr>
+                                            <tr>
+                                                <td>Organisation</td>
+                                                <td>
+                                                    {{meta['org_name']}}<br>
+                                                    {{meta['org']}}
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>Role</td>
+                                                <td>{{meta['role']}}</td>
+                                            </tr>
+                                            <tr>
+                                                <td>API Key</td>
+                                                <td>
+                                                    <span id="censored_key">
+                                                        {{meta['api_key'][:4]}}*********************************{{meta['api_key'][-4:]}}
+                                                    </span>
+                                                    <span id="uncensored_key" style="display: none;">
+                                                        {{meta['api_key']}}
+                                                    </span>
+                                                    <a class="ml-3" href="{{url_for('settings_b.new_token_user_self')}}"><i class="fa fa-random"></i></a>
+                                                    <span class="btn btn-outline-secondary ml-1 px-1 py-0" id="btn_key" onclick="show_api_key();">
+                                                        <i class="fas fa-eye"></i>
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                            <tr>
+                                                <td>2FA OTP</td>
+                                                <td>
+                                                    {% if meta['2fa'] %}
+                                                        <span class="badge badge-success" style="font-size: 1.0rem;"><b>YES</b></span>
+                                                        {% if acl_admin %}
+                                                            <div>
+                                                                <a class="btn btn-sm btn-danger mt-1" href="{{url_for('settings_b.user_otp_reset_self')}}"><i class="fas fa-sync"></i> RESET OTP</a>
+                                                            </div>
+                                                        {% endif %}
+                                                        {% if not global_2fa %}
+                                                            <div>
+                                                                <a class="btn btn-sm btn-danger mt-1" href="{{url_for('settings_b.user_otp_disable_self')}}"><i class="fas fa-warning"></i> DISABLE 2FA OTP</a>
+                                                            </div>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        <span class="badge badge-danger" style="font-size: 1.0rem;"><b>NO</b></span>
+                                                        <div>
+                                                            <a class="btn btn-success" href="{{url_for('settings_b.user_otp_enable_self')}}"><i class="fas fa-plus"></i> ACTIVATE 2FA OTP</a>
+                                                        </div>
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                            {% if meta['2fa'] %}
+                                                <tr>
+                                                    <td>TOTP</td>
+                                                    <td><a class="btn btn-info" href="{{url_for('settings_b.user_hotp')}}"><i class="fas fa-eye"></i> View Paper Tokens</a></td>
+                                                </tr>
+                                            {% endif %}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+
+                        <div class="card my-2">
+                            <div class="card-header bg-dark text-white">
+                                <h3 class="txt-secondary my-2">User Settings:</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="card">
+                                    <div class="card-body">
+                                        <h3 class="card-title text-center"><img src="{{ url_for('static', filename='image/misp-logo.png')}}" alt="MISP" style="width:150px;"></h3>
+
+
+                                        <table id="table_misp_config" class="table table-striped border-primary">
+                                            <thead class="bg-dark text-white">
+                                            <tr>
+                                                <th>Description</th>
+                                                <th>url</th>
+                                                <th>key</th>
+                                                <th>verify cert</th>
+                                                <th></th>
+                                                <th></th>
+                                            </tr>
+                                            </thead>
+                                            <tbody style="font-size: 15px;">
+                                            {% for misp in misps %}
+                                                <tr class="border-color: blue;">
+                                                    <td>
+                                                        {% if misp['description'] %}
+                                                            {{ misp['description'] }}
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>{{ misp['url'] }}</td>
+                                                    <td>
+                                                        {% if misp['key'] %}
+                                                            {{ misp['key'][0:4] }}*********************************{{ misp['key'][-4:] }}
+                                                        {% endif %}
+                                                    </td>
+                                                    <td>
+                                                        {% if misp['ssl'] %}
+                                                            <i class="fa-solid fa-check"></i>
+                                                        {% else %}
+                                                            <i class="fa-solid fa-xmark"></i>
+                                                        {% endif %}
+                                                    </td>
+                                                    <td></td>
+                                                    <td>
+                                                        <a href="{{ url_for('settings_b.edit_misp') }}?uuid={{ misp['uuid'] }}">
+															<button type="button" class="btn btn-outline-info">
+																<i class="fas fa-pencil-alt"></i>
+															</button>
+														</a>
+                                                        <a href="{{ url_for('settings_b.delete_misp') }}?uuid={{ misp['uuid'] }}">
+															<button type="button" class="btn btn-outline-danger">
+																<i class="fa-solid fa-trash-can"></i>
+															</button>
+														</a>
+                                                    </td>
+                                                </tr>
+                                            {% endfor %}
+                                            </tbody>
+                                        </table>
+
+                                        <a href="{{ url_for('settings_b.edit_misp') }}">
+                                            <button class="btn btn-primary my-2">
+                                                <i class="fa-solid fa-plus"></i> Add <b>MISP</b> Account
+                                            </button>
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+
+					</div>
+				</div>
+
+    	    </div>
+		</div>
+	</div>
+</body>
+
+<script>
+$(document).ready(function(){
+    $("#nav_edit_profile").addClass("active");
+	$("#nav_my_profile").removeClass("text-muted");
+    $('#table_misp_config').DataTable({
+        "aLengthMenu": [[5, 10, 15, -1], [5, 10, 15, "All"]],
+        "iDisplayLength": 10,
+        "order": [[ 2, "desc" ]]
+    });
+
+} );
+
+function toggle_sidebar(){
+	if($('#nav_menu').is(':visible')){
+		$('#nav_menu').hide();
+		$('#side_menu').removeClass('border-right')
+		$('#side_menu').removeClass('col-lg-2')
+		$('#core_content').removeClass('col-lg-10')
+	}else{
+		$('#nav_menu').show();
+		$('#side_menu').addClass('border-right')
+		$('#side_menu').addClass('col-lg-2')
+		$('#core_content').addClass('col-lg-10')
+	}
+}
+
+function show_api_key() {
+    $('#censored_key').hide();
+    $('#btn_key').hide();
+    $('#uncensored_key').show();
+}
+
+</script>
+
+</html>

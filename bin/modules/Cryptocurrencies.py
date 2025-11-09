@@ -28,7 +28,6 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from modules.abstract_module import AbstractModule
 from lib.objects.CryptoCurrencies import CryptoCurrency
-from lib.objects.Items import Item
 
 ##################################
 ##################################
@@ -92,7 +91,19 @@ CURRENCIES = {
         'regex': r'\b(?<![+/=])X[A-Za-z0-9]{33}(?![+/=])\b',
         'max_execution_time': default_max_execution_time,
         'tag': 'infoleak:automatic-detection="dash-address"',
-    }
+    },
+    'tron': {
+            'name': 'tron',  # e.g. TYdds9VLDjUshf9tbsXSfGUZNzJSbbBeat
+            'regex': r'\b(?<![+/=])T[0-9a-zA-Z]{33}(?![+/=])\b',
+            'max_execution_time': default_max_execution_time,
+            'tag': 'infoleak:automatic-detection="tron-address"',
+    },
+    'ripple': {
+            'name': 'ripple',  # e.g.
+            'regex': r'\b(?<![+/=])r[0-9a-zA-Z]{24,34}(?![+/=])\b',
+            'max_execution_time': default_max_execution_time,
+            'tag': 'infoleak:automatic-detection="ripple-address"',
+    },
 }
 ##################################
 ##################################
@@ -145,17 +156,10 @@ class Cryptocurrencies(AbstractModule, ABC):
 
                             # debug
                             print(private_keys)
-                            to_print = 'Cryptocurrency;{};{};{};'.format(item.get_source(),
-                                                                         item.get_date(),
-                                                                         item.get_basename())
-                            self.redis_logger.warning('{}Detected {} {} private key;{}'.format(
-                                to_print, len(private_keys), currency['name'], item_id))
                     else:
                         private_keys = []
 
-                    to_print = f"{currency['name']} found: {len(addresses)} address and {len(private_keys)} private Keys"
-                    print(to_print)
-                    self.redis_logger.warning(to_print)
+                    print(f"{currency['name']} found: {len(addresses)} address and {len(private_keys)} private Keys {self.obj.get_global_id()}")
 
 
 if __name__ == '__main__':

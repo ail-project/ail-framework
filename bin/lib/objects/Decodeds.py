@@ -18,7 +18,7 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from lib.ConfigLoader import ConfigLoader
-from lib.objects.abstract_daterange_object import AbstractDaterangeObject
+from lib.objects.abstract_daterange_object import AbstractDaterangeObject, AbstractDaterangeObjects
 from packages import Date
 
 sys.path.append('../../configs/keys')
@@ -168,7 +168,7 @@ class Decoded(AbstractDaterangeObject):
 
         obj_attrs.append(obj.add_attribute('sha1', value=self.id))
         obj_attrs.append(obj.add_attribute('mimetype', value=self.get_mimetype()))
-        obj_attrs.append(obj.add_attribute('malware-sample', value=self.id, data=self.get_content()))
+        obj_attrs.append(obj.add_attribute('malware-sample', value=self.id, data=self.get_content(r_type='bytes')))
         for obj_attr in obj_attrs:
             for tag in self.get_tags():
                 obj_attr.add_tag(tag)
@@ -321,6 +321,32 @@ class Decoded(AbstractDaterangeObject):
 
 ############################################################################
 
+class Decodeds(AbstractDaterangeObjects):
+    """
+        Barcodes Objects
+    """
+    def __init__(self):
+        super().__init__('decoded', Decoded)
+
+    def get_name(self):
+        return 'Decodeds'
+
+    def get_icon(self):
+        return {'fa': 'fas', 'icon': 'lock-open'}
+
+    def get_link(self, flask_context=False):
+        if flask_context:
+            url = url_for('objects_decoded.decodeds_dashboard')
+        else:
+            url = f'{baseurl}/objects/decodeds'
+        return url
+
+    def sanitize_id_to_search(self, name_to_search):
+        return name_to_search
+
+
+############################################################################
+
 def is_vt_enabled():
     return VT_ENABLED
 
@@ -428,16 +454,19 @@ def get_all_decodeds_objects(filters={}):
     mimetypes = sorted(mimetypes)
 
     if filters.get('start'):
-        _, start_id = filters['start'].split(':', 1)
-        decoded = Decoded(start_id)
-        # remove sources
-        start_mimetype = decoded.get_mimetype()
-        i = 0
-        while start_mimetype and len(mimetypes) > i:
-            if mimetypes[i] == start_mimetype:
-                mimetypes = mimetypes[i:]
-                start_mimetype = None
-            i += 1
+        if filters['start']['type'] == 'decoded':
+            _, start_id = filters['start'].split(':', 1)
+            decoded = Decoded(start_id)
+            # remove sources
+            start_mimetype = decoded.get_mimetype()
+            i = 0
+            while start_mimetype and len(mimetypes) > i:
+                if mimetypes[i] == start_mimetype:
+                    mimetypes = mimetypes[i:]
+                    start_mimetype = None
+                i += 1
+        else:
+            start_id = None
     else:
         start_id = None
 

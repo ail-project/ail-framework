@@ -59,6 +59,20 @@ class Item(AbstractObject):
         """
         return item_basic.get_item_date(self.id, add_separator=separator)
 
+    def get_link(self, flask_context=False):
+        if flask_context:
+            url = url_for('objects_item.showItem', id=self.id)
+        else:
+            url = f'{baseurl}/object/item?id={self.id}'
+        return url
+
+    def get_svg_icon(self):
+        if is_crawled(self.id):
+            color = 'red'
+        else:
+            color = '#332288'
+        return {'style': '', 'icon': '', 'color': color, 'radius': 5}
+
     def get_source(self):
         """
         Returns Item source/feeder name
@@ -135,6 +149,16 @@ class Item(AbstractObject):
         r_object.sadd(f'child:item::{self.id}', child_id)
         r_object.hset(f'meta:item::{child_id}', 'parent', self.id)
 
+    def get_file_name(self):
+        filename = self.get_correlation('file-name').get('file-name')
+        if filename:
+            return filename.pop()[1:]
+
+    def get_message(self):
+        filename = self.get_correlation('message').get('message')
+        if filename:
+            return filename.pop()[1:]
+
 ####################################################################################
 ####################################################################################
 
@@ -149,18 +173,13 @@ class Item(AbstractObject):
         if len(basename) > 255:
             new_basename = f'{basename[:215]}{str(uuid4())}.gz'
             self.id = rreplace(self.id, basename, new_basename, 1)
-
-
-
-
-
         return self.id
 
     # # TODO: sanitize_id
     # # TODO: check if already exists ?
     # # TODO: check if duplicate
-    def save_on_disk(self, content, binary=True, compressed=False, b64=False):
-        if not binary:
+    def _save_on_disk(self, content, content_type='bytes', b64=False, compressed=False):
+        if not content_type == 'bytes':
             content = content.encode()
         if b64:
             content = base64.standard_b64decode(content)
@@ -181,22 +200,10 @@ class Item(AbstractObject):
     # tags
     # origin
     # duplicate -> all item iterations ???
+    # father
     #
-    def create(self, content, tags, father=None, duplicates=[], _save=True):
-        if _save:
-            self.save_on_disk(content, binary=True, compressed=False, base64=False)
-
-        # # TODO:
-        # for tag in tags:
-        #     self.add_tag(tag)
-
-        if father:
-            pass
-
-        for obj_id in duplicates:
-            for dup in duplicates[obj_id]:
-                self.add_duplicate(obj_id, dup['algo'], dup['similarity'])
-
+    def create(self, content, content_type='bytes', b64=False, compressed=False):
+        self._save_on_disk(content, content_type=content_type, b64=b64, compressed=compressed)
 
     # # WARNING: UNCLEAN DELETE /!\ TEST ONLY /!\
     # TODO: DELETE ITEM CORRELATION + TAGS + METADATA + ...
@@ -210,20 +217,6 @@ class Item(AbstractObject):
 
 ####################################################################################
 ####################################################################################
-
-    def get_link(self, flask_context=False):
-        if flask_context:
-            url = url_for('objects_item.showItem', id=self.id)
-        else:
-            url = f'{baseurl}/object/item?id={self.id}'
-        return url
-
-    def get_svg_icon(self):
-        if is_crawled(self.id):
-            color = 'red'
-        else:
-            color = '#332288'
-        return {'style': '', 'icon': '', 'color': color, 'radius': 5}
 
     def get_misp_object(self):
         obj = MISPObject('ail-leak', standalone=True)
@@ -242,11 +235,15 @@ class Item(AbstractObject):
                 obj_attr.add_tag(tag)
         return obj
 
-    def exist_correlation(self):
-        pass
-
     def is_crawled(self):
         return self.id.startswith('crawled')
+
+    def is_onion(self):
+        is_onion = False
+        if len(self.id) > 62:
+            if is_crawled(self.id) and self.id[-42:-36] == '.onion':
+                is_onion = True
+        return is_onion
 
     # if is_crawled
     def get_domain(self):
@@ -279,7 +276,7 @@ class Item(AbstractObject):
         """
         if options is None:
             options = set()
-        meta = self.get_default_meta(tags=True)
+        meta = self.get_default_meta(tags=True, options=options)
         meta['date'] = self.get_date(separator=True)
         meta['source'] = self.get_source()
         # optional meta fields
@@ -289,8 +286,12 @@ class Item(AbstractObject):
             if self.is_crawled():
                 tags = meta.get('tags')
                 meta['crawler'] = self.get_meta_crawler(tags=tags)
+        if 'url' in options:
+            meta['url'] = self.get_url()
         if 'duplicates' in options:
             meta['duplicates'] = self.get_duplicates()
+        if 'file_name' in options:
+            meta['file_name'] = self.get_file_name()
         if 'lines' in options:
             content = meta.get('content')
             meta['lines'] = self.get_meta_lines(content=content)
@@ -305,6 +306,8 @@ class Item(AbstractObject):
             meta['investigations'] = self.get_investigations()
         if 'link' in options:
             meta['link'] = self.get_link(flask_context=True)
+        if 'last_full_date' in options:
+            meta['last_full_date'] = f"{meta['date'][0:4]}-{meta['date'][5:7]}-{meta['date'][8:10]}"
 
         # meta['encoding'] = None
         return meta
@@ -313,17 +316,21 @@ class Item(AbstractObject):
         """
         :type tags: list
         """
-        if tags is None:
-            tags = []
         crawler = {}
         if self.is_crawled():
             crawler['domain'] = self.get_domain()
             crawler['har'] = self.get_har()
             crawler['screenshot'] = self.get_screenshot()
+            if crawler['screenshot']:
+                crawler['screenshot_id'] = crawler['screenshot'].replace('/', '')
+            else:
+                crawler['screenshot_id'] = None
             crawler['url'] = self.get_url()
-            if not tags:
+
+            domain_tags = self.get_obj_tags('domain', '', crawler['domain'], r_list=True)
+            if tags is None:
                 tags = self.get_tags()
-            crawler['is_tags_safe'] = self.is_tags_safe(tags)
+            crawler['is_tags_safe'] = self.is_tags_safe(tags) and self.is_tags_safe(domain_tags)
         return crawler
 
     def get_meta_lines(self, content=None):
@@ -341,12 +348,16 @@ class Item(AbstractObject):
     # TODO RENAME ME
     def get_languages(self, min_len=600, num_langs=3, min_proportion=0.2, min_probability=0.7, force_gcld3=False):
         ld = LanguagesDetector(nb_langs=num_langs, min_proportion=min_proportion, min_probability=min_probability, min_len=min_len)
-        return ld.detect(self.get_content(), force_gcld3=force_gcld3)
+        return ld.detect(self.get_content(), force_gcld3=force_gcld3, iso3=False)
 
     def get_mimetype(self, content=None):
         if not content:
             content = self.get_content()
         return magic.from_buffer(content, mime=True)
+
+    def get_search_document(self):
+        global_id = self.get_global_id()
+        return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': self.get_html2text_content()}
 
     ############################################################################
     ############################################################################
@@ -462,17 +473,24 @@ def get_all_items_objects(filters={}):
         sources = get_all_sources()
     sources = sorted(sources)
     if filters.get('start'):
-        _, start_id = filters['start'].split(':', 1)
-        item = Item(start_id)
-        # remove sources
-        start_source = item.get_source()
-        i = 0
-        while start_source and len(sources) > i:
-            if sources[i] == start_source:
-                sources = sources[i:]
-                start_source = None
-            i += 1
-        start_date = item.get_date()
+        if filters['start']['type'] == 'item':
+            start_id = filters['start']['id']
+            item = Item(start_id)
+            if not item.exists():
+                start_id = None
+                start_date = None
+            # remove sources
+            start_source = item.get_source()
+            i = 0
+            while start_source and len(sources) > i:
+                if sources[i] == start_source:
+                    sources = sources[i:]
+                    start_source = None
+                i += 1
+            start_date = item.get_date()
+        else:
+            start_id = None
+            start_date = None
     else:
         start_id = None
         start_date = None
@@ -524,7 +542,8 @@ def get_all_items_objects(filters={}):
                         start_id = None
                     i += 1
             for obj_id in all_items:
-                yield Item(obj_id)
+                if obj_id:
+                    yield Item(obj_id)
 
 ################################################################################
 ################################################################################
@@ -880,12 +899,16 @@ def create_item(obj_id, obj_metadata, io_content):
 
 
 # if __name__ == '__main__':
-#     content = 'test file content'
-#     duplicates = {'tests/2020/01/02/test.gz': [{'algo':'ssdeep', 'similarity':75}, {'algo':'tlsh', 'similarity':45}]}
-#
+    # content = 'test file content'
+    # duplicates = {'tests/2020/01/02/test.gz': [{'algo':'ssdeep', 'similarity':75}, {'algo':'tlsh', 'similarity':45}]}
+
     # item = Item('tests/2020/01/02/test_save.gz')
-#     item.create(content, _save=False)
-#     filters = {'date_from': '20230101', 'date_to': '20230501', 'sources': ['crawled', 'submitted'], 'start': ':submitted/2023/04/28/submitted_2b3dd861-a75d-48e4-8cec-6108d41450da.gz'}
-#     gen = get_all_items_objects(filters=filters)
-#     for obj_id in gen:
-#         print(obj_id.id)
+    # item.create(content, _save=False)
+    # filters = {'date_from': '20230101', 'date_to': '20230501', 'sources': ['crawled', 'submitted'], 'start': ':submitted/2023/04/28/submitted_2b3dd861-a75d-48e4-8cec-6108d41450da.gz'}
+    # gen = get_all_items_objects(filters=filters)
+    # for obj_id in gen:
+    #     print(obj_id.id)
+    # obj = Item('')
+    # obj.set_custom_meta({"a": 1, "c": {"tests": "3"}})
+    # obj.set_custom_meta(None, {'a': 1}, {'b': 2}, {'c': 3})
+    # print(obj.get_custom_meta())

@@ -8,6 +8,7 @@
     <link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png') }}">
 
     <!-- Core CSS -->
+    <link href="{{ url_for('static', filename='css/ail-project.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
     <link href="{{ url_for('static', filename='css/daterangepicker.min.css') }}" rel="stylesheet">
@@ -24,6 +25,7 @@
     <script src="{{ url_for('static', filename='js/d3/graphlinesgroup.js') }}"></script>
     <script language="javascript" src="{{ url_for('static', filename='js/moment.min.js') }}"></script>
     <script language="javascript" src="{{ url_for('static', filename='js/jquery.daterangepicker.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/echarts.min.js')}}"></script>
 
     <style>
         .btn-link {
@@ -43,6 +45,8 @@
 <body>
 
 {% include 'nav_bar.html' %}
+
+{% include 'modals/tracker_remove_object.html' %}
 
 <div class="container-fluid">
     <div class="row">
@@ -117,15 +121,25 @@
                                     <td class="text-right"><b>Level</b></td>
                                     <td>
                                         {% if meta['level'] == 0 %}
-                                            Private
-                                        {% else %}
+                                            My User
+                                        {% elif meta['level'] == 1 %}
                                             Global
+                                        {% elif meta['level'] == 2 %}
+                                            My Organisation
                                         {% endif %}
                                     </td>
                                 </tr>
                                 <tr>
                                     <td class="text-right"><b>Creator</b></td>
                                     <td>{{meta['user']}}</td>
+                                </tr>
+                                <tr>
+                                    <td class="text-right"><b>Org</b></td>
+                                    <td>
+                                        {% if meta['org'] %}
+                                            {{meta['org_name']}}<br>{{ meta['org'] }}
+                                        {% endif %}
+                                    </td>
                                 </tr>
                                 <tr>
                                     <td class="text-right"><b>First Seen</b></td>
@@ -151,6 +165,12 @@
                                         {%endfor%}
                                     </td>
                                 </tr>
+                                {% if meta['filter_duplicate_notification'] %}
+                                    <td class="text-right"><b>Notification</b></td>
+                                    <td>
+                                        <i class="fas fa-clone"></i> Filter Duplicate Content
+                                    </td>
+                                {% endif %}
                                 <tr>
                                     <td class="text-right"><b>Mails</b></td>
                                     <td>
@@ -207,45 +227,103 @@
                     {% if rule_content %}
                         <h5 class="mb-0">Yara Rule:</h5>
                         <p class="my-0">
-                            <pre class="border bg-light">{{ rule_content }}</pre>
+                            <pre class="text-collapse border bg-light mb-0 p-2">{{ rule_content }}</pre>
+                            <button class="btn btn-info btn-sm" id="btn_read_more">Show more</button>
                         </p>
                     {% endif %}
 
-                    <div class="card mb-5 mt-1">
-                        <div class="card-body">
+                    <form action="{{ url_for('hunters.show_tracker') }}" method='post'>
+                        <input id="tracker_uuid" name="tracker_uuid" class="form-control" type="text" value="{{ meta['uuid'] }}" hidden>
 
-                            <div class="row mb-3">
-                                <div class="col-md-6">
-                                    <div class="input-group" id="date-range-from">
-                                        <div class="input-group-prepend"><span class="input-group-text"><i
-                                                class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
-                                        <input class="form-control" id="date-range-from-input" placeholder="yyyy-mm-dd"
-                                               name="date_from" autocomplete="off"
-                                               {% if meta['date_from'] %}value="{{ meta['date_from'][0:4] }}-{{ meta['date_from'][4:6] }}-{{ meta['date_from'][6:8] }}"
-                                               {% elif meta['first_seen'] %}value="{{ meta['first_seen'][0:4] }}-{{ meta['first_seen'][4:6] }}-{{ meta['first_seen'][6:8] }}"
-                                               {% endif %}>
+                        <div class="card mb-5 mt-1">
+                            <div class="card-body">
+
+                                <div class="row mb-3">
+                                    <div class="col-md-6">
+                                        <div class="input-group" id="date-range-from">
+                                            <div class="input-group-prepend"><span class="input-group-text"><i
+                                                    class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
+                                            <input class="form-control" id="date-range-from-input" placeholder="yyyy-mm-dd"
+                                                   name="date_from" autocomplete="off"
+                                                   {% if meta['date_from'] %}value="{{ meta['date_from'][0:4] }}-{{ meta['date_from'][4:6] }}-{{ meta['date_from'][6:8] }}"
+                                                   {% elif meta['first_seen'] %}value="{{ meta['first_seen'][0:4] }}-{{ meta['first_seen'][4:6] }}-{{ meta['first_seen'][6:8] }}"
+                                                   {% endif %}>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="input-group" id="date-range-to">
+                                            <div class="input-group-prepend"><span class="input-group-text"><i
+                                                    class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
+                                            <input class="form-control" id="date-range-to-input" placeholder="yyyy-mm-dd"
+                                                   name="date_to" autocomplete="off"
+                                                   {% if meta['date_to'] %}value="{{ meta['date_to'][0:4] }}-{{ meta['date_to'][4:6] }}-{{ meta['date_to'][6:8] }}"
+                                                   {% elif meta['last_seen'] %}value="{{ meta['last_seen'][0:4] }}-{{ meta['last_seen'][4:6] }}-{{ meta['last_seen'][6:8] }}"
+                                                   {% endif %}>
+                                        </div>
                                     </div>
                                 </div>
-                                <div class="col-md-6">
-                                    <div class="input-group" id="date-range-to">
-                                        <div class="input-group-prepend"><span class="input-group-text"><i
-                                                class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
-                                        <input class="form-control" id="date-range-to-input" placeholder="yyyy-mm-dd"
-                                               name="date_to" autocomplete="off"
-                                               {% if meta['date_to'] %}value="{{ meta['date_to'][0:4] }}-{{ meta['date_to'][4:6] }}-{{ meta['date_to'][6:8] }}"
-                                               {% elif meta['last_seen'] %}value="{{ meta['last_seen'][0:4] }}-{{ meta['last_seen'][4:6] }}-{{ meta['last_seen'][6:8] }}"
-                                               {% endif %}>
+                                <h5>Filter Objects:</h5>
+                                <div class="row">
+                                    <div class="col-lg-6">
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="decoded_obj" id="decoded_obj" {% if 'decoded' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="decoded_obj"><i class="fas fa-lock-open"></i>&nbsp;Decoded <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Content that has been decoded from an encoded format, such as base64"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="item_obj" id="item_obj" {% if 'item' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                                <label class="custom-control-label" for="item_obj"><i class="fas fa-file"></i>&nbsp;Item <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Text that has been processed by AIL. It can include various types of extracted information"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="pgp_obj" id="pgp_obj" {% if 'pgp' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="pgp_obj"><i class="fas fa-key"></i>&nbsp;PGP <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="PGP key/block metadata"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="title_obj" id="title_obj" {% if 'title' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="title_obj"><i class="fas fa-heading"></i>&nbsp;Title <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Title that has been extracted from a HTML page"></i></label>
+                                        </div>
+                                    </div>
+                                    <div class="col-lg-6">
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="message_obj" id="message_obj" {% if 'message' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="message_obj"><i class="fas fa-comment-dots"></i>&nbsp;Message <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Messages from Chats"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="ocr_obj" id="ocr_obj" {% if 'ocr' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="ocr_obj"><i class="fas fa-expand"></i>&nbsp;OCR <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Text extracted from Images"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="barcode_obj" id="barcode_obj" {% if 'barcode' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="barcode_obj"><i class="fas fa-barcode"></i>&nbsp;Barcode <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Qcodes Extracted from Images and Screenshots"></i></label>
+                                        </div>
+                                        <div class="custom-control custom-switch mt-1">
+                                            <input class="custom-control-input" type="checkbox" name="qrcode_obj" id="qrcode_obj" {% if 'qrcode' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                            <label class="custom-control-label" for="qrcode_obj"><i class="fas fa-qrcode"></i>&nbsp;Qrcode <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Qcodes Extracted from Images and Screenshots"></i></label>
+                                        </div>
                                     </div>
                                 </div>
+
+                                <button class="btn btn-info mt-2">
+                                    <i class="fas fa-search"></i> Tracked Objects
+                                </button>
+
                             </div>
-
-                            <button class="btn btn-info" type="button" id="button-search-tags" onclick="getItems();">
-                                <i class="fas fa-search"></i> Tracked Objects
-                            </button>
-
                         </div>
-                    </div>
+                    </form>
 
+                </div>
+            </div>
+
+            <h5>Matches by year:</h5>
+            <div>
+                <div class="row">
+                    <div class="col-12 col-lg-11">
+                        <div id="heatmapyear" style="width: 100%;height: 250px;"></div>
+                    </div>
+                    <div class="col-12 col-lg-1">
+                        {% for year in meta['years'] %}
+                            <div><button class="btn btn-info mt-1" onclick="update_heatmap_year({{ year }})">{{ year }}</button></div>
+                        {% endfor %}
+                    </div>
                 </div>
             </div>
 
@@ -258,7 +336,7 @@
                             <th>Type</th>
 			      	        <th></th>
 							<th>Id</th>
-				     	    <th>Tags</th>
+				     	    <th>Last Date</th>
 							<th></th>
 				   	    </tr>
 					    </thead>
@@ -280,13 +358,26 @@
 									<a href="{{ object['link'] }}">
 										{{ object['id']}}
 									</a>
+                                    {% if object['tags'] %}
+                                        <div>
+                                            {% for tag in object['tags'] %}
+                                                <span class="badge badge-{{ bootstrap_label[loop.index0 % 5] }} pull-left">{{ tag }}</span>
+                                            {% endfor %}
+                                        </div>
+                                    {% endif %}
 								</td>
+
 								<td>
-									{% for tag in object['tags'] %}
-										<span class="badge badge-{{ bootstrap_label[loop.index0 % 5] }} pull-left">{{ tag }}</span>
-									{% endfor %}
+									{% if object['last_full_date'] %}
+										{{ object['last_full_date']}}
+									{% endif %}
 								</td>
 								<td class="text-right">
+                                    <button class="btn btn-outline-danger py-0 px-1"
+                                            data-toggle="modal" data-target="#modal_tracker_remove_object"
+                                            data-tracker_uuid="{{ meta['uuid'] }}" data-obj_gid="{{ object['type'] }}:{{ object['subtype'] }}:{{ object['id'] }}">
+                                            <i class="fas fa-trash-alt"></i></button>
+                                    </button>
 {#									<a href="{{ url_for('investigations_b.unregister_investigation') }}?uuid={{ meta['uuid']}}&type={{ object['type'] }}&subtype={{ object['subtype']}}&id={{ object['id']}}">#}
 {#										<button type="button" class="btn btn-danger"><i class="fas fa-trash-alt"></i></button>#}
 {#									</a>#}
@@ -342,7 +433,7 @@
         $('#myTable_').DataTable({
             "aLengthMenu": [[5, 10, 15, -1], [5, 10, 15, "All"]],
             "iDisplayLength": 10,
-            "order": [[0, "asc"]]
+            "order": [[3, "desc"]]
         });
 
         sparkline("sparkline", {{ meta['sparkline'] }}, {});
@@ -369,6 +460,26 @@
         }
     }
 
+    // Hover effect
+    var btn_read_more = $('#btn_read_more')
+    var textElement = document.querySelector(".text-collapse");
+    if (textElement) {
+        const lineHeight = parseFloat(window.getComputedStyle(textElement).lineHeight);
+        var maxLines = 30;
+        const maxHeight = lineHeight * maxLines;
+        // Apply initial truncation
+        textElement.style.maxHeight = maxHeight + 'px';
+        btn_read_more.on("click", function () {
+            if (btn_read_more.text() === "Show more") {
+                textElement.style.maxHeight = 'none';
+                btn_read_more.text("Show less");
+            } else {
+                textElement.style.maxHeight = maxHeight + 'px';
+                btn_read_more.text("Show more");
+            }
+        });
+    }
+
     function edit_tags() {
         $('#div_edit_mails').hide();
         $('#div_edit_description').hide();
@@ -392,6 +503,57 @@
         var date_to = $('#date-range-to-input').val();
         window.location.replace("{{ url_for('hunters.show_tracker') }}?uuid={{ meta['uuid'] }}&date_from=" + date_from + "&date_to=" + date_to);
     }
+
+var heatyearChart = echarts.init(document.getElementById('heatmapyear'));
+window.addEventListener('resize', function() {
+    heatyearChart.resize();
+});
+var optionheatmap;
+
+optionheatmap = {
+  tooltip: {
+    position: 'top',
+    formatter: function (p) {
+      return p.data[0] + ': ' + p.data[1];
+    }
+  },
+  visualMap: {
+    min: 0,
+    max: 100,
+    calculable: true,
+    orient: 'horizontal',
+    left: '500',
+    top: '-10'
+  },
+  calendar: [
+    {
+      orient: 'horizontal',
+      range: new Date().getFullYear(),
+    },
+  ],
+  series: [
+    {
+      type: 'heatmap',
+      coordinateSystem: 'calendar',
+      data: []
+    },
+
+  ]
+};
+heatyearChart.setOption(optionheatmap);
+
+update_heatmap_year(null);
+function update_heatmap_year(year) {
+    $.getJSON("{{ url_for('hunters.tracker_show_stats_year') }}?uuid={{ meta['uuid'] }}&year=" + year)
+        .done(function(data) {
+            optionheatmap['visualMap']['max'] = data['max']
+            optionheatmap['calendar'][0]['range'] = data['year']
+            optionheatmap['series'][0]['data'] = data['nb']
+            heatyearChart.setOption(optionheatmap)
+
+        }
+    );
+}
 
 </script>
 

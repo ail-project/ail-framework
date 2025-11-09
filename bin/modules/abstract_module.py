@@ -18,11 +18,10 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
-from pubsublogger import publisher
 from lib import ail_logger
 from lib.ail_queues import AILQueue
 from lib import regex_helper
-from lib.exceptions import ModuleQueueError
+from lib.exceptions import ModuleQueueError, TimeoutException
 from lib.objects.ail_objects import get_obj_from_global_id
 
 logging.config.dictConfig(ail_logger.get_config(name='modules'))
@@ -51,15 +50,6 @@ class AbstractModule(ABC):
             self.obj = None
             self.sha256_mess = None
 
-        # Init Redis Logger
-        self.redis_logger = publisher
-        # Port of the redis instance used by pubsublogger
-        self.redis_logger.port = 6380
-        # Channel name to publish logs
-        # # TODO: refactor logging
-        # If provided could be a namespaced channel like script:<ModuleName>
-        self.redis_logger.channel = 'Script'
-
         # Cache key
         self.r_cache_key = regex_helper.generate_redis_cache_key(self.module_name)
         self.max_execution_time = 30
@@ -72,6 +62,9 @@ class AbstractModule(ABC):
 
         # Debug Mode
         self.debug = False
+
+        if queue:
+            self.queue.start()
 
     def get_obj(self):
         return self.obj
@@ -179,7 +172,10 @@ class AbstractModule(ABC):
                     trace = traceback.format_tb(err.__traceback__)
                     trace = ''.join(trace)
                     self.logger.critical(f"Error in module {self.module_name}: {__name__} : {err}")
-                    self.logger.critical(f"Module {self.module_name} input message: {message}")
+                    if message:
+                        self.logger.critical(f"Module {self.module_name} input message: {message}")
+                    if self.obj:
+                        self.logger.critical(f"{self.module_name} Obj: {self.obj.get_global_id()}")
                     self.logger.critical(trace)
 
                     if isinstance(err, ModuleQueueError):
@@ -197,7 +193,10 @@ class AbstractModule(ABC):
                 self.computeNone()
                 # Wait before next process
                 self.logger.debug(f"{self.module_name}, waiting for new message, Idling {self.pending_seconds}s")
-                time.sleep(self.pending_seconds)
+                try:
+                    time.sleep(self.pending_seconds)
+                except TimeoutException:
+                    pass
 
     def _module_name(self):
         """

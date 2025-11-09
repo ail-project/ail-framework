@@ -9,13 +9,15 @@ import sys
 
 import importlib.util
 
+from lib.ail_core import get_ail_uuid
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
 ##################################
 from lib.ConfigLoader import ConfigLoader
 from lib import Tag
-from lib import Users
+from lib import ail_users
 from lib.objects import Decodeds
 from lib.objects import Domains
 from lib.objects import Items
@@ -111,7 +113,7 @@ def user_migration():
     print('USER MIGRATION...')
 
     # create role_list
-    Users._create_roles_list()
+    ail_users._create_roles()
 
     for user_id in r_serv_db.hkeys('user:all'):
         role = r_serv_db.hget(f'user_metadata:{user_id}', 'role')
@@ -121,11 +123,8 @@ def user_migration():
         if not chg_passwd:
             chg_passwd = None
 
-        Users.create_user(user_id, password=None, chg_passwd=chg_passwd, role=role)
-        Users.edit_user_password(user_id, password_hash, chg_passwd=chg_passwd)
-        Users._delete_user_token(user_id)
+        ail_users.create_user(user_id, password=password_hash, chg_passwd=chg_passwd, org_uuid=get_ail_uuid(), role=role)
         print(user_id, token)
-        Users._set_user_token(user_id, token)
 
     for invite_row in r_crawler.smembers('telegram:invite_code'):
         r_obj.sadd('telegram:invite_code', invite_row)
@@ -223,7 +222,7 @@ def trackers_migration():
     print('TRACKERS MIGRATION...')
     for tracker_uuid in old_Tracker.get_all_tracker_uuid():
         meta = get_tracker_metadata(tracker_uuid)
-        Tracker._re_create_tracker(meta['type'], meta['uuid'], meta['tracked'], meta['user_id'], meta['level'],
+        Tracker._re_create_tracker(meta['type'], meta['uuid'], meta['tracked'], 'TEST_ORG', meta['user_id'], meta['level'],
                                    tags=meta['tags'], mails=meta['mails'], description=meta['description'],
                                    webhook=meta['webhook'], sources=meta['sources'],
                                    first_seen=meta['first_seen'], last_seen=meta['last_seen'])
@@ -249,8 +248,6 @@ def trackers_migration():
         for obj_id in old_Tracker.get_retro_hunt_items_by_daterange(task_uuid, meta['date_from'], meta['date_to']):
             retro_hunt.add('item', '', obj_id)
 
-    Tracker._fix_db_custom_tags()
-
 
 ###############################
 #                             #
@@ -263,7 +260,7 @@ def investigations_migration():
     for investigation_uuid in old_Investigations.get_all_investigations():
         old_investigation = old_Investigations.Investigation(investigation_uuid)
         meta = old_investigation.get_metadata()
-        Investigations._re_create_investagation(meta['uuid'], meta['user_creator'], meta['date'], meta['name'], meta['threat_level'], meta['analysis'], meta['info'], meta['tags'], meta['last_change'], meta['timestamp'], meta['misp_events'])
+        Investigations._re_create_investigation(meta['uuid'], get_ail_uuid(), meta['user_creator'], 1, meta['date'], meta['name'], meta['threat_level'], meta['analysis'], meta['info'], meta['tags'], meta['last_change'], meta['timestamp'], meta['misp_events'])
         new_investigation = Investigations.Investigation(meta['uuid'])
         for dict_obj in old_investigation.get_objects():
             new_investigation.register_object(dict_obj['id'], dict_obj['type'], dict_obj['subtype'])
@@ -445,7 +442,7 @@ def crawler_migration():
             # print(meta)
             cookiejar = crawlers.Cookiejar(meta['uuid'])
             if not cookiejar.exists():
-                crawlers.create_cookiejar(meta['user'], description=meta['description'], level=meta['level'],
+                crawlers.create_cookiejar(get_ail_uuid(), meta['user'], description=meta['description'], level=meta['level'],
                                           cookiejar_uuid=meta['uuid'])
                 cookiejar._set_date(meta['date'])
 
@@ -453,7 +450,7 @@ def crawler_migration():
                     cookie_dict = get_cookie_dict(cookie_uuid)
                     if cookie_dict:
                         # print(cookie_dict)
-                        crawlers.api_create_cookie(meta['user'], cookiejar_uuid, cookie_dict)
+                        crawlers.api_create_cookie(get_ail_uuid(), meta['user'], 'admin', cookiejar_uuid, cookie_dict)
 
     auto_crawler_web = r_crawler.smembers('auto_crawler_url:regular')
     auto_crawler_onion = r_crawler.smembers('auto_crawler_url:onion')

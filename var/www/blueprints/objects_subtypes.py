@@ -13,7 +13,7 @@ from flask import Flask, render_template, jsonify, request, Blueprint, redirect,
 from flask_login import login_required, current_user
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only
+from Role_Manager import login_admin, login_read_only
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -23,7 +23,9 @@ from lib import ail_core
 from lib.objects import abstract_subtype_object
 from lib.objects import ail_objects
 from lib.objects import CryptoCurrencies
+from lib.objects import Usernames
 from packages import Date
+from lib import search_engine
 
 # ============ BLUEPRINT ============
 objects_subtypes = Blueprint('objects_subtypes', __name__, template_folder=os.path.join(os.environ['AIL_FLASK'], 'templates/objects'))
@@ -116,6 +118,58 @@ def objects_dashboard_pgp():
 @login_read_only
 def objects_dashboard_username():
     return subtypes_objects_dashboard('username', request)
+
+@objects_subtypes.route("/objects/usernames/search", methods=['GET', 'POST'])
+@login_required
+@login_read_only
+def objects_username_search():
+    if request.method == 'POST':
+        to_search = request.form.get('to_search')
+        subtype = request.form.get('search_subtype')
+        case_sensitive = bool(request.form.get('case_sensitive'))
+        if case_sensitive:
+            case_sensitive = 1
+        else:
+            case_sensitive = 0
+        page = request.form.get('page', 1)
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            page = 1
+        return redirect(url_for('objects_subtypes.objects_username_search', search=to_search, page=page, subtype=subtype, case_sensitive=case_sensitive))
+    else:
+        user_id = current_user.get_user_id()
+        to_search = request.args.get('search')
+        subtype = request.args.get('subtype')  # TODO sanityze
+        case_sensitive = request.args.get('case_sensitive', False)
+        if case_sensitive and case_sensitive != '0':
+            case_sensitive = True
+        else:
+            case_sensitive = False
+        page = request.args.get('page', 1)
+        try:
+            page = int(page)
+        except (TypeError, ValueError):
+            page = 1
+
+        usernames = Usernames.Usernames()
+        if not usernames.is_valid_search(subtype, to_search):
+            return create_json_response({'status': 'error', 'message': 'Invalid Username'}, 400)
+
+        search_engine.log(user_id, 'username', to_search)
+        search_result = usernames.search_by_id(to_search, [subtype], page, case_sensitive=case_sensitive)
+
+        if search_result:
+            ids = sorted(search_result.keys())
+            dict_page = ail_core.paginate_iterator(ids, nb_obj=500, page=page)
+            dict_objects = usernames.get_metas(subtype, dict_page['list_elem'], options={'icon', 'sparkline'})  # TODO OPTIONS
+        else:
+            dict_objects = {}
+            dict_page = {}
+
+        return render_template("username/search_usernames_result.html", dict_objects=dict_objects, search_result=search_result,
+                               dict_page=dict_page, subtypes=ail_core.get_object_all_subtypes('username'),
+                               to_search=to_search, subtype=subtype, case_sensitive=case_sensitive)
 
 @objects_subtypes.route("/objects/user-accounts", methods=['GET'])
 @login_required

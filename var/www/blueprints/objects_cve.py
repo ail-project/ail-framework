@@ -10,10 +10,10 @@ import sys
 import json
 
 from flask import Flask, render_template, jsonify, request, Blueprint, redirect, url_for, Response, abort, send_file
-from flask_login import login_required, current_user
+from flask_login import login_required
 
 # Import Role_Manager
-from Role_Manager import login_admin, login_analyst, login_read_only
+from Role_Manager import login_admin, login_read_only
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -30,7 +30,7 @@ bootstrap_label = ['primary', 'success', 'danger', 'warning', 'info']
 
 
 # ============ FUNCTIONS ============
-@objects_cve.route("/objects/cve", methods=['GET'])
+@objects_cve.route("/objects/cves", methods=['GET'])
 @login_required
 @login_read_only
 def objects_cves():

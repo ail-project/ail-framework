@@ -41,6 +41,14 @@ class DefaultFeeder:
     def get_source(self):
         return self.json_data.get('source')
 
+    def get_date(self):
+        return datetime.date.today().strftime("%Y%m%d")
+
+    def get_feeder_timestamp(self):
+        timestamp = self.json_data.get('timestamp')
+        if timestamp:
+            return int(timestamp)
+
     def get_json_data(self):
         """
         Return the JSON data,
@@ -49,6 +57,12 @@ class DefaultFeeder:
 
     def get_json_meta(self):
         return self.json_data.get('meta')
+
+    def get_meta(self):
+        return self.json_data.get('meta')
+
+    def get_payload(self):
+        return self.json_data.get('data')
 
     def get_uuid(self):
         return self.json_data.get('source_uuid')

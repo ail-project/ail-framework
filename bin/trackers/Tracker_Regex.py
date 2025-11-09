@@ -47,14 +47,13 @@ class Tracker_Regex(AbstractModule):
         self.exporters = {'mail': MailExporterTracker(),
                           'webhook': WebHookExporterTracker()}
 
-        self.redis_logger.info(f"Module: {self.module_name} Launched")
+        self.logger.info(f"Module: {self.module_name} Launched")
 
     def compute(self, message):
         # refresh Tracked regex
         if self.last_refresh < Tracker.get_tracker_last_updated_by_type('regex'):
             self.tracked_regexs = Tracker.get_tracked_regexs()
             self.last_refresh = time.time()
-            self.redis_logger.debug('Tracked regex refreshed')
             print('Tracked regex refreshed')
 
         obj = self.get_obj()
@@ -64,6 +63,11 @@ class Tracker_Regex(AbstractModule):
         # Object Filter
         if obj_type not in self.tracked_regexs:
             return None
+
+        # Ensure only string content is processed
+        if self.obj.type == 'decoded':
+            if not self.obj.get_mimetype().startswith('text/'):
+                return None
 
         content = obj.get_content()
 
@@ -116,8 +120,7 @@ class Tracker_Regex(AbstractModule):
             if ail_objects.is_filtered(obj, filters):
                 continue
 
-            print(f'new tracked regex found: {tracker_name} in {obj_id}')
-            self.redis_logger.warning(f'new tracked regex found: {tracker_name} in {obj_id}')
+            print(f'new tracked regex found: {tracker_name} in {self.obj.get_global_id()}')
 
             tracker.add(obj.get_type(), obj.get_subtype(r_str=True), obj_id)
 
@@ -127,13 +130,25 @@ class Tracker_Regex(AbstractModule):
                 else:
                     obj.add_tag(tag)
 
-            if tracker.mail_export():
-                if not matches:
-                    matches = self.extract_matches(re_matches)
-                self.exporters['mail'].export(tracker, obj, matches)
+            # Notification Export
+            if tracker.mail_export() or tracker.webhook_export():
+                filter_notifications = False
 
-            if tracker.webhook_export():
-                self.exporters['webhook'].export(tracker, obj)
+                if tracker.is_duplicate_notification_filtering_enabled():
+                    content = self.obj.get_content(r_type='bytes')
+                    filter_notifications = tracker.is_duplicate_content(content)
+
+                if not filter_notifications:
+                    if not matches:
+                        matches = self.extract_matches(re_matches)
+
+                    # Mails
+                    if tracker.mail_export():
+                        self.exporters['mail'].export(tracker, self.obj, matches)
+
+                    # Webhook
+                    if tracker.webhook_export():
+                        self.exporters['webhook'].export(tracker, self.obj, matches)
 
 
 if __name__ == "__main__":
