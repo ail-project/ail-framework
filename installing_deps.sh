@@ -61,7 +61,11 @@ else
 fi
 
 # SUBMODULES #
+if [ -z "$SKIP_GIT_SUBMODULE" ]; then
 git submodule update --init --recursive
+else
+    echo "--- Skipping Linux packages installation ---"
+fi
 
 # REDIS #
 if [ -z "$SKIP_REDIS" ]; then
