@@ -1,40 +1,128 @@
-FROM ubuntu:22.04
-ARG tz_buildtime=Europe/Rome
-ENV TZ=$tz_buildtime
-RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ARG BASE_IMAGE=ubuntu
+FROM $BASE_IMAGE
 
-# Make sure that all updates are in place
-RUN apt-get clean && apt-get update -y && apt-get upgrade -y \
-        && apt-get dist-upgrade -y && apt-get autoremove -y
+# Installing_deps.sh script arguments
+ARG SKIP_REDIS
+ARG SKIP_TLSH
+ARG SKIP_PGPDUMP
+ARG SKIP_YARA
+ARG SKIP_KVROCKS
+ARG SKIP_GEN_CERT
+ARG SKIP_DB_SETUP
+ARG SKIP_LNX_PKG_INSTALL
 
-# Install needed packages
-RUN apt-get install git python3-dev build-essential \
-       libffi-dev libssl-dev libfuzzy-dev wget sudo -y
+Installing_deps.sh script env (arg to env mapping)
+ENV SKIP_REDIS=$SKIP_REDIS
+ENV SKIP_TLSH=$SKIP_TLSH
+ENV SKIP_PGPDUMP=$SKIP_PGPDUMP
+ENV SKIP_YARA=$SKIP_YARA
+ENV SKIP_KVROCKS=$SKIP_KVROCKS
+ENV SKIP_GEN_CERT=$SKIP_GEN_CERT
+ENV SKIP_DB_SETUP=$SKIP_DB_SETUP
+ENV SKIP_LNX_PKG_INSTALL=$SKIP_LNX_PKG_INSTALL
 
-# Adding sudo command
-RUN useradd -m docker && echo "docker:docker" | chpasswd && adduser docker sudo
-RUN echo "root ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
-
-# Installing AIL dependencies
-RUN mkdir /opt/AIL
-ADD . /opt/AIL
-WORKDIR /opt/AIL
-RUN ./installing_deps.sh 
-WORKDIR /opt/AIL
-
-# Default to UTF-8 file.encoding
+# AIL runtime env variables
 ENV LANG C.UTF-8
-ENV AIL_HOME /opt/AIL
+ENV AIL_HOME /home/ail/ail-framework
 ENV AIL_BIN ${AIL_HOME}/bin
 ENV AIL_FLASK ${AIL_HOME}/var/www
 ENV AIL_REDIS ${AIL_HOME}/redis/src
 ENV AIL_ARDB ${AIL_HOME}/ardb/src
 ENV AIL_VENV ${AIL_HOME}/AILENV
 
-ENV PATH ${AIL_VENV}/bin:${AIL_HOME}:${AIL_REDIS}:${AIL_ARDB}:${AIL_BIN}:${AIL_FLASK}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+#ENV PATH ${AIL_VENV}/bin:${AIL_HOME}:${AIL_REDIS}:${AIL_ARDB}:${AIL_BIN}:${AIL_FLASK}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-RUN ./pystemon/install.sh
-RUN pip install -r /opt/pystemon/requirements.txt
+# Build Dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    sudo \
+    wget \
+    git \
+    python3-dev \
+    g++ \
+    cmake \
+    automake \
+    libtool \
+    make \
+    gcc \
+    pkg-config \
+    build-essential \
+    autoconf \
+    virtualenv \
+    unzip \
+    libsnappy-dev \
+    libssl-dev \
+    libfreetype6-dev \
+    protobuf-compiler \
+    libprotobuf-dev \
+    libadns1-dev \
+    libev-dev \
+    libgmp-dev \
+    libfuzzy-dev \
+    libffi-dev && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
-COPY docker_start.sh /docker_start.sh
-ENTRYPOINT ["/bin/bash", "docker_start.sh"]
+# Runtime Dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    python3-pip \
+    python3-tk \
+    screen \
+    python3-numpy \
+    python3-opencv \
+    libzbar0 \
+    libadns1 \
+    graphviz \
+    p7zip-full && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Replacements of Comiles/Builds
+RUN wget https://github.com/RocksLabs/kvrocks-fpm/releases/download/202502091/kvrocks_2.11.1-1_amd64.deb && \
+    apt-get update && \
+    apt-get install -y \
+    pgpdump \
+    tlsh-tools \
+    yara \
+    ./kvrocks_2.11.1-1_amd64.deb && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create ail user
+RUN useradd -m -s /bin/bash ail
+
+# Create ail framework work directory
+RUN mkdir -p /home/ail/ail-framework
+
+# Change to ail work directory
+WORKDIR /home/ail/ail-framework
+
+# Copy AIL files
+COPY bin configs doc files logs samples tests tools update var install_virtualenv.sh installing_deps.sh requirements.txt reset_AIL.sh ./
+
+# Start AIL installers
+RUN apt-get update && \
+    chmod +x ./installing_deps.sh && \
+    sed -i 's/^sudo *//' ./installing_deps.sh && \
+    ./installing_deps.sh && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Copy Docker modified files
+COPY other_installers/docker/update.cfg configs/update.cfg
+
+COPY other_installers/docker/core.cfg configs/core.cfg
+
+COPY other_installers/docker/kvrocks_6383.conf configs/6383.conf
+
+COPY other_installers/docker/docker_start.sh /usr/local/sbin/
+
+RUN chmod +x /usr/local/sbin/docker_start.sh
+
+RUN chown -R ail:ail /home/ail/
+
+# Change user
+USER ail
+
+ENTRYPOINT ["/bin/bash", "/usr/local/sbin/docker_start.sh"]
