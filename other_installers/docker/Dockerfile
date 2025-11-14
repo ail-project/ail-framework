@@ -11,7 +11,7 @@ ARG SKIP_GEN_CERT
 ARG SKIP_DB_SETUP
 ARG SKIP_LNX_PKG_INSTALL
 
-Installing_deps.sh script env (arg to env mapping)
+# Installing_deps.sh script env (arg to env mapping)
 ENV SKIP_REDIS=$SKIP_REDIS
 ENV SKIP_TLSH=$SKIP_TLSH
 ENV SKIP_PGPDUMP=$SKIP_PGPDUMP
