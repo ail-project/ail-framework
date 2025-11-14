@@ -100,13 +100,19 @@ RUN wget https://github.com/RocksLabs/kvrocks-fpm/releases/download/202502091/kv
 RUN useradd -m -s /bin/bash ail
 
 # Create ail framework work directory
-RUN mkdir -p /home/ail/ail-framework
+RUN mkdir -p ${AIL_HOME}
 
 # Change to ail work directory
-WORKDIR /home/ail/ail-framework
+WORKDIR ${AIL_HOME}
+
+# Copy AIL dirs
+COPY --parents bin configs doc files logs samples tests tools update var ./
 
 # Copy AIL files
-COPY bin configs doc files logs samples tests tools update var install_virtualenv.sh installing_deps.sh requirements.txt reset_AIL.sh ./
+COPY install_virtualenv.sh installing_deps.sh requirements.txt reset_AIL.sh ./
+
+# Copy Docker modified files part 1 - to pass installing_deps.sh check
+COPY other_installers/docker/core.cfg configs/core.cfg
 
 # Start AIL installers
 RUN apt-get update && \
@@ -116,10 +122,8 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy Docker modified files
+# Copy Docker modified files part 2
 COPY other_installers/docker/update.cfg configs/update.cfg
-
-COPY other_installers/docker/core.cfg configs/core.cfg
 
 COPY other_installers/docker/kvrocks_6383.conf configs/6383.conf
 
