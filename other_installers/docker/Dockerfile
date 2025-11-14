@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=ubuntu
+ARG BASE_IMAGE=ubuntu:24.04
 FROM $BASE_IMAGE
 
 # Installing_deps.sh script arguments
@@ -29,6 +29,11 @@ ENV AIL_FLASK ${AIL_HOME}/var/www
 ENV AIL_REDIS ${AIL_HOME}/redis/src
 ENV AIL_ARDB ${AIL_HOME}/ardb/src
 ENV AIL_VENV ${AIL_HOME}/AILENV
+
+
+ARG tz_buildtime=Europe/Prague
+ENV TZ=$tz_buildtime
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 #ENV PATH ${AIL_VENV}/bin:${AIL_HOME}:${AIL_REDIS}:${AIL_ARDB}:${AIL_BIN}:${AIL_FLASK}:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
