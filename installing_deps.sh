@@ -8,6 +8,7 @@
 #   SKIP_KVROCKS=1
 #   SKIP_GEN_CERT=1
 #   SKIP_DB_SETUP=1
+#.  SKIP_LNX_PKG_INSTALL=1
 #
 # Example: SKIP_REDIS=1 SKIP_YARA=1 ./install.sh
 #
@@ -18,6 +19,7 @@ set -e
 ## bash debug mode toggle below
 #set -x
 
+if [ -z "$SKIP_LNX_PKG_INSTALL" ]; then
 sudo apt-get update
 
 sudo apt-get install python3-pip virtualenv python3-dev python3-tk libfreetype6-dev \
@@ -53,6 +55,10 @@ sudo apt-get install build-essential libffi-dev autoconf -qq
 
 # sflock, gz requirement
 sudo apt-get install p7zip-full -qq # TODO REMOVE ME
+
+else
+    echo "--- Skipping Linux packages installation ---"
+fi
 
 # SUBMODULES #
 git submodule update --init --recursive
