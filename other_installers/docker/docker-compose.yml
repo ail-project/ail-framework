@@ -3,7 +3,7 @@ version: '3.8'
 services:
   ail:
     container_name: ail
-    image: localhost/ail
+    image: ${KVROCKS_IMAGE:-localhost/ail}
     ports:
       - "7000:7000"
     environment:
@@ -16,6 +16,6 @@ services:
 
   kvrocks:
     container_name: kvrocks
-    image: images.paas.redhat.com/it-cloud-ocp-proxy/apache/kvrocks:2.14.0
+    image: ${KVROCKS_IMAGE:-apache/kvrocks:2.14.0}
     volumes:
       - ./kvrocks.conf:/var/lib/kvrocks/kvrocks.conf:Z
