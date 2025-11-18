@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  ail:
+    container_name: ail
+    image: localhost/ail
+    ports:
+      - "7000:7000"
+    environment:
+      - SKIP_LAUNCH_REDIS=true
+      - SKIP_LAUNCH_KVROCKS=false
+      - SKIP_CHECK_REDIS=true
+      - SKIP_CHECK_KVROCKS=true
+    depends_on:
+      - kvrocks
+
+  kvrocks:
+    container_name: kvrocks
+    image: images.paas.redhat.com/it-cloud-ocp-proxy/apache/kvrocks:2.14.0
+    volumes:
+      - ./kvrocks.conf:/var/lib/kvrocks/kvrocks.conf:Z
