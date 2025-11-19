@@ -77,6 +77,8 @@ services:
       - SKIP_LAUNCH_KVROCKS=true
       - SKIP_CHECK_REDIS=true
       - SKIP_CHECK_KVROCKS=true
+    volumes:
+      - core.cfg:/home/ail/ail-framework/configs/core.cfg:Z
     depends_on:
       kvrocks:
         condition: service_healthy
