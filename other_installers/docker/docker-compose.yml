@@ -1,21 +1,107 @@
 version: '3.8'
 
+# Define a reusable base for the valkey services to keep the config DRY
+x-valkey-service: &valkey-service
+  image: ${VALKEY_IMAGE:-valkey/valkey:8}
+  restart: unless-stopped
+  networks:
+    - ail-network
+  healthcheck:
+    test: ["CMD", "valkey-cli", "ping"]
+    interval: 5s
+    timeout: 3s
+    retries: 5
+
 services:
+  kvrocks:
+    image: ${KVROCKS_IMAGE:-apache/kvrocks:2.14.0}
+    container_name: ail-kvrocks
+    restart: unless-stopped
+    networks:
+      - ail-network
+    volumes:
+      - kvrocks_data:/var/lib/kvrocks
+      - ./kvrocks.conf:/var/lib/kvrocks/kvrocks.conf:Z
+    healthcheck:
+      test: ["CMD", "redis-cli", "-h", "localhost", "-p", "6383", "-a", "ail", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  cache:
+    <<: *valkey-service
+    container_name: ail-cache
+    volumes:
+      - cache_data:/data
+
+  log:
+    <<: *valkey-service
+    container_name: ail-log
+    volumes:
+      - log_data:/data
+
+  log-submit:
+    <<: *valkey-service
+    container_name: ail-log-submit
+    volumes:
+      - log-submit_data:/data
+
+  queues:
+    <<: *valkey-service
+    container_name: ail-queues
+    volumes:
+      - queues_data:/data
+
+  process:
+    <<: *valkey-service
+    container_name: ail-process
+    volumes:
+      - process_data:/data
+
+  mixer-cache:
+    <<: *valkey-service
+    container_name: ail-mixer-cache
+    volumes:
+      - mixer-cache_data:/data
+
   ail:
+    image: ${AIL_IMAGE:-localhost/ail}
     container_name: ail
-    image: ${KVROCKS_IMAGE:-localhost/ail}
+    restart: unless-stopped
     ports:
       - "7000:7000"
+    networks:
+      - ail-network
     environment:
       - SKIP_LAUNCH_REDIS=true
-      - SKIP_LAUNCH_KVROCKS=false
+      - SKIP_LAUNCH_KVROCKS=true
       - SKIP_CHECK_REDIS=true
       - SKIP_CHECK_KVROCKS=true
     depends_on:
-      - kvrocks
+      kvrocks:
+        condition: service_healthy
+      cache:
+        condition: service_healthy
+      log:
+        condition: service_healthy
+      log-submit:
+        condition: service_healthy
+      queues:
+        condition: service_healthy
+      process:
+        condition: service_healthy
+      mixer_cache:
+        condition: service_healthy
 
-  kvrocks:
-    container_name: kvrocks
-    image: ${KVROCKS_IMAGE:-apache/kvrocks:2.14.0}
-    volumes:
-      - ./kvrocks.conf:/var/lib/kvrocks/kvrocks.conf:Z
+networks:
+  ail-network:
+    driver: bridge
+
+volumes:
+  kvrocks_data:
+  cache_data:
+  log_data:
+  log-submit_data:
+  queues_data:
+  process_data:
+  mixer-cache_data:
