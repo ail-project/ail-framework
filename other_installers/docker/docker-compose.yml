@@ -90,7 +90,7 @@ services:
         condition: service_healthy
       process:
         condition: service_healthy
-      mixer_cache:
+      mixer-cache:
         condition: service_healthy
 
 networks:
