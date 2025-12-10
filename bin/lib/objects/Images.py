@@ -12,6 +12,13 @@ from io import BytesIO
 from flask import url_for
 from pymisp import MISPObject
 
+try:
+    from PIL import Image as PILImage
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:
+    IMAGEHASH_AVAILABLE = False
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
@@ -94,6 +101,9 @@ class Image(AbstractDaterangeObject):
     def get_description_models(self):
         models = []
         for key in self._get_fields_keys():
+            # Handle both bytes and string keys from database
+            if isinstance(key, bytes):
+                key = key.decode('utf-8')
             if key.startswith('desc:'):
                 model = key[5:]
                 models.append(model)
@@ -109,6 +119,35 @@ class Image(AbstractDaterangeObject):
         if description:
             description = description.replace("`", ' ')
         return description
+
+    def calculate_phash(self):
+        """Calculate perceptual hash (pHash) for the image."""
+        if not IMAGEHASH_AVAILABLE:
+            return None
+        
+        if not self.exists():
+            return None
+        
+        try:
+            filepath = self.get_filepath()
+            with PILImage.open(filepath) as img:
+                phash = imagehash.phash(img)
+                return str(phash)
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate phash for image {self.id}: {e}")
+            return None
+
+    def get_phash(self):
+        """Get perceptual hash, calculating it if not stored."""
+        phash = self._get_field('phash')
+        if phash:
+            return phash
+        
+        # Calculate and store if not exists
+        phash = self.calculate_phash()
+        if phash:
+            self._set_field('phash', phash)
+        return phash
 
     def get_search_document(self):
         global_id = self.get_global_id()
@@ -138,6 +177,8 @@ class Image(AbstractDaterangeObject):
             meta['content'] = self.get_content()
         if 'description' in options:
             meta['description'] = self.get_description()
+        if 'phash' in options or 'all' in options:
+            meta['phash'] = self.get_phash()
         if 'tags_safe' in options:
             meta['tags_safe'] = self.is_tags_safe(meta['tags'])
         return meta

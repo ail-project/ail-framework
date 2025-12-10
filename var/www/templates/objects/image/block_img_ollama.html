@@ -11,3 +11,16 @@
         </div>
     </div>
 {% endif %}
+
+{% if image_phash %}
+    <div class="card border-secondary mt-2">
+        <div class="card-body py-2">
+            <div class="row">
+                <div class="col-3">
+                    <strong>Percept<br>Hash:</strong>
+                </div>
+                <div class="col-9"><code>{{ image_phash }}</code></div>
+            </div>
+        </div>
+    </div>
+{% endif %}

@@ -18,6 +18,7 @@ from lib.objects.abstract_object import AbstractObject
 from lib.ConfigLoader import ConfigLoader
 from lib import Language
 from lib.objects import UsersAccount
+from lib.objects import Images
 from lib.data_retention_engine import update_obj_date, get_obj_date_first
 # TODO Set all messages ???
 
@@ -160,7 +161,10 @@ class Message(AbstractObject):
                 image_description = self._get_obj_field('image', None, obj_id, 'desc:qwen2.5vl')
                 if image_description:
                     image_description = image_description.replace("`", ' ')
-                images.append({'id': obj_id, 'ocr': self._get_image_ocr(obj_id), 'description': image_description})
+                # Get phash from Image object
+                image_obj = Images.Image(obj_id)
+                image_phash = image_obj.get_phash() if image_obj.exists() else None
+                images.append({'id': obj_id, 'ocr': self._get_image_ocr(obj_id), 'description': image_description, 'phash': image_phash})
         return images
 
     def get_barcodes(self):

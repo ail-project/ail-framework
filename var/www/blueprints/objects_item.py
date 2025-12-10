@@ -99,6 +99,12 @@ def showItem():  # # TODO: support post
             img = Screenshot(meta['crawler']['screenshot_id'])
             meta['description'] = img.get_description()
             meta['image_gid'] = img.get_global_id()
+            # Get perceptual hash if available
+            try:
+                if hasattr(img, 'get_phash'):
+                    meta['image_phash'] = img.get_phash()
+            except:
+                meta['image_phash'] = None
 
     if meta.get('investigations'):
         invests = []
