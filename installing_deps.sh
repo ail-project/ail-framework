@@ -127,20 +127,32 @@ DEFAULT_HOME=$(pwd)
 #### KVROCKS ####
 if [ -z "$SKIP_KVROCKS" ]; then
     echo "--- Building Kvrocks ---"
-    # If we are on debian, we can get the kvrocks deb package:
-    #   download the right version from https://github.com/RocksLabs/kvrocks-fpm/releases
-    #   then sudo dpkg -i kvrocks_2.11.1-1_amd64.deb   (change the version number to yours)
 
-    test ! -d kvrocks/ && git clone https://github.com/apache/incubator-kvrocks.git kvrocks
-    pushd kvrocks
-    # Build Kvrocks in portable mode
-    #export PORTABLE=1
-    ./x.py build -j 4
-    popd
+    # Check if we're on a Debian-based system or in GitHub Actions
+    USE_DEB=false
+    if [ -f /etc/debian_version ] || [ ! -z "$GITHUB_ACTIONS" ]; then
+        # Additional check: verify dpkg is available
+        if command -v dpkg >/dev/null 2>&1; then
+            USE_DEB=true
+        fi
+    fi
+
+    if [ "$USE_DEB" = true ]; then
+        echo "Debian-based system detected, installing from .deb package"
+        wget -O /tmp/kvr.deb https://github.com/RocksLabs/kvrocks-fpm/releases/download/2.14.0-1/kvrocks_2.14.0-1_amd64.deb
+        sudo dpkg -i /tmp/kvr.deb && rm /tmp/kvr.deb
+    else
+        echo "Non-Debian system detected, compiling from source"
+        test ! -d kvrocks/ && git clone https://github.com/apache/incubator-kvrocks.git kvrocks
+        pushd kvrocks
+        # Build Kvrocks in portable mode
+        #export PORTABLE=1
+        ./x.py build -j 4
+        popd
+    fi
 
     DEFAULT_KVROCKS_DATA=$DEFAULT_HOME/DATA_KVROCKS
     mkdir -p $DEFAULT_KVROCKS_DATA
-
     sed -i "s|dir /tmp/kvrocks|dir ${DEFAULT_KVROCKS_DATA}|1" $DEFAULT_HOME/configs/6383.conf
     ##-- KVROCKS --##
 else
