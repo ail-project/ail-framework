@@ -172,12 +172,21 @@ def show_tracker():
             new_filter = request.form.get(f'{obj_type}_obj')
             if new_filter:
                 filter_obj_types.append(obj_type)
-        if sorted(filter_obj_types) == list(Tracker.get_objects_tracked()):
+        filter_obj_types = ail_core.sanitize_tracked_objects(filter_obj_types)
+        if len(filter_obj_types) == ail_core.get_nb_objects_tracked():
             filter_obj_types = []
-    else:
-        tracker_uuid = request.args.get('uuid', None)
-        date_from = request.args.get('date_from')
-        date_to = request.args.get('date_to')
+        filter_obj_types = ','.join(filter_obj_types)
+        if filter_obj_types:
+            return redirect(url_for('hunters.show_tracker', uuid=tracker_uuid, date_from=date_from, date_to=date_to, filter=filter_obj_types))
+        else:
+            return redirect(url_for('hunters.show_tracker', uuid=tracker_uuid, date_from=date_from, date_to=date_to))
+
+    tracker_uuid = request.args.get('uuid', None)
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    filter_obj_types = ail_core.sanitize_tracked_objects(request.args.get('filter', '').split(','))
+    if len(filter_obj_types) == ail_core.get_nb_objects_tracked():
+        filter_obj_types = []
 
     res = Tracker.api_check_tracker_acl(tracker_uuid, user_org, user_id, user_role, 'view')
     if res:  # invalid access
@@ -207,7 +216,7 @@ def show_tracker():
     if date_from:
         date_from, date_to = Date.sanitise_daterange(date_from, date_to)
         objs = tracker.get_objs_by_daterange(date_from, date_to, filter_obj_types)
-        meta['objs'] = ail_objects.get_objects_meta(objs, options={'last_full_date'}, flask_context=True)
+        meta['objs'] = ail_objects.get_objects_meta(objs, options={'last_full_date', 'pdf'}, flask_context=True)
     else:
         date_from = ''
         date_to = ''

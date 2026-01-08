@@ -12,6 +12,8 @@ import os
 import sys
 import time
 
+import pymupdf4llm
+
 from abc import ABC
 
 sys.path.append(os.environ['AIL_BIN'])
@@ -20,12 +22,14 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from importer.feeders.Default import DefaultFeeder
 from lib.ail_core import get_chat_instance_name
+from lib.objects import Authors
 from lib.objects.Chats import Chat
 from lib.objects import ChatSubChannels
 from lib.objects import ChatThreads
 from lib.objects import Images
 from lib.objects import Items
 from lib.objects import Messages
+from lib.objects import PDFs
 from lib.objects import FilesNames
 # from lib.objects import Files
 from lib.objects import UsersAccount
@@ -168,6 +172,8 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
             instance_name = get_chat_instance_name(self.get_chat_instance_uuid())
             item_id = f'{instance_name}/{d[0:4]}/{d[4:6]}/{d[6:8]}/{self.json_data["data-sha256"]}.gz'
             self.obj = Items.Item(item_id)
+        elif obj_type == 'pdf':
+            self.obj = PDFs.PDF(self.json_data['data-sha256'])
         else:
             obj_id = Messages.create_obj_id(self.get_chat_instance_uuid(), chat_id, message_id, timestamp, thread_id=thread_id)
             self.obj = Messages.Message(obj_id)
@@ -191,10 +197,11 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
         if meta_chat.get('icon'):
             img = Images.create(meta_chat['icon'], b64=True)
-            img.add(date, chat)
-            chat.set_icon(img.get_global_id())
-            if new_objs:
-                new_objs.add(img)
+            if img:
+                img.add(date, chat)
+                chat.set_icon(img.get_global_id())
+                if new_objs:
+                    new_objs.add(img)
 
         if meta_chat.get('username'):
             username = Username(meta_chat['username'], self.get_chat_protocol())
@@ -225,9 +232,10 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
         if meta.get('icon'):
             img = Images.create(meta['icon'], b64=True)
-            img.add(date, chat)
-            chat.set_icon(img.get_global_id())
-            new_objs.add(img)
+            if img:
+                img.add(date, chat)
+                chat.set_icon(img.get_global_id())
+                new_objs.add(img)
 
         if meta.get('username'):
             username = Username(meta['username'], self.get_chat_protocol())
@@ -324,9 +332,10 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
         if meta.get('icon'):
             img = Images.create(meta['icon'], b64=True)
-            img.add(date, user_account)
-            user_account.set_icon(img.get_global_id())
-            new_objs.add(img)
+            if img:
+                img.add(date, user_account)
+                user_account.set_icon(img.get_global_id())
+                new_objs.add(img)
 
         if meta.get('info'):
             user_account.set_info(meta['info'])
@@ -363,9 +372,10 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
         if meta.get('icon'):
             img = Images.create(meta['icon'], b64=True)
-            img.add(date, user_account)
-            user_account.set_icon(img.get_global_id())
-            new_objs.add(img)
+            if img:
+                img.add(date, user_account)
+                user_account.set_icon(img.get_global_id())
+                new_objs.add(img)
 
         if meta.get('info'):
             user_account.set_info(meta['info'])
@@ -405,7 +415,8 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
             media_name = self.get_media_name()
             if media_name:
                 print(media_name)
-                FilesNames.FilesNames().create(media_name, date, obj)
+                f = FilesNames.FilesNames().create(media_name, date, obj)
+                objs.add(f)
 
             for reaction in self.get_reactions():
                 obj.add_reaction(reaction['reaction'], int(reaction['count']))
@@ -430,13 +441,50 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
 
                 if self.obj.type == 'image':
                     obj = Images.create(self.get_message_content())
-                    obj.add(date, message)
-                    obj.set_parent(obj_global_id=message.get_global_id())
+                    if obj:
+                        obj.add(date, message)
+                        obj.set_parent(obj_global_id=message.get_global_id())
+
+                        # FILENAME
+                        media_name = self.get_media_name()
+                        if media_name:
+                            f = FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
+                            objs.add(f)
+
+                elif self.obj.type == 'pdf':
+                    # content
+                    if not self.obj.exists():
+                        obj = PDFs.create(self.obj.id, self.get_message_content())
+                        if not obj:
+                            raise Exception('PDF not created, Size limit reached')
+                        obj.set_parent(obj_global_id=message.get_global_id())
+
+                        pdf_meta = self.get_meta_field('file_metadata')
+                        if pdf_meta:
+                            obj.set_file_meta(pdf_meta)
+                            print(pdf_meta)
+                            if 'Author' in pdf_meta:
+                                print(pdf_meta['Author'])
+                                author = Authors.create(pdf_meta['Author'], obj)
+                                author.add(date, obj)
+
+                        md_content = pymupdf4llm.to_markdown(obj.get_filepath())
+                        item_id = f'pdf/{date[0:4]}/{date[4:6]}/{date[6:8]}/{obj.id}.gz'
+                        item = Items.Item(item_id)
+                        if not item.exists():
+                            item.create(md_content, content_type='str')
+                            objs.add(item)
+                            print(item_id)
+                        obj.add_children('item', '', item_id)
+                        obj.add_correlation('item', '', item_id)
+
+                    self.obj.add(date, message)
 
                     # FILENAME
                     media_name = self.get_media_name()
                     if media_name:
-                        FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
+                        f = FilesNames.FilesNames().create(media_name, date, message, file_obj=self.obj)
+                        objs.add(f)
 
                 elif self.obj.type == 'item':
                     obj = self.obj
@@ -447,8 +495,9 @@ class AbstractChatFeeder(DefaultFeeder, ABC):
                     # FILENAME
                     media_name = self.get_media_name()
                     if media_name:
-                        file_name = FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
+                        f = file_name = FilesNames.FilesNames().create(media_name, date, message, file_obj=obj)
                         file_name.add_correlation('item', '', obj.id)
+                        objs.add(f)
 
         for obj in objs:  # TODO PERF avoid parsing metas multiple times
 
