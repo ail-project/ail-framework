@@ -60,6 +60,7 @@ r_cache = config_loader.get_redis_conn("Redis_Cache")
 
 ITEMS_FOLDER = config_loader.get_config_str("Directories", "pastes")
 HAR_DIR = config_loader.get_files_directory('har')
+COOKIEJAR_LOCAL_STORAGE = config_loader.get_files_directory('cookiejar_local_storage')
 activate_crawler = config_loader.get_config_str("Crawler", "activate_crawler")
 D_HAR = config_loader.get_config_boolean('Crawler', 'default_har')
 D_SCREENSHOT = config_loader.get_config_boolean('Crawler', 'default_screenshot')
@@ -78,11 +79,14 @@ config_loader = None
 
 def api_get_onion_lookup(domain):  # TODO check if object process done ???
     domain = domain.lower().strip()
-    parts = domain.split('.onion')
-    # if len(parts) > 1:
-    #     for word in [part + '.onion' for part in parts[:-1]] + [parts[-1]]:
-    #         if len(word) >= 32 and word.endswith('.onion'):
-    #             api_get_onion_lookup(word)
+    words = domain.split()
+    if len(words) > 1:
+        for word in words:
+            if '.onion' in word:
+                domain = word
+    
+    if '.onion' not in domain:
+        return {'error': 'Invalid Onion Domain', 'domain': domain}, 404
 
     url_unpack = unpack_url(domain)
     if not url_unpack:
@@ -114,9 +118,12 @@ def api_get_onion_lookup(domain):  # TODO check if object process done ???
     del meta['type']
     del meta['status']
     meta['titles'] = []
-    for h in dom.get_correlation('title').get('title', []):
-        t = Titles.Title(h[1:])
-        meta['titles'].append(t.get_content())
+    if not Tag.is_tags_safe(tags):
+        meta['titles'].append("Redacted")
+    else:
+        for h in dom.get_correlation('title').get('title', []):
+            t = Titles.Title(h[1:])
+            meta['titles'].append(t.get_content())
     return meta
 
 def api_get_domain_from_url(url):
@@ -803,7 +810,38 @@ class Cookiejar:
     def get_nb_cookies(self):
         return r_crawler.scard(f'cookiejar:cookies:{self.uuid}')
 
-    def get_meta(self, level=False, nb_cookies=False, cookies=False, r_json=False):
+    def get_local_storage_file(self):
+        return f'{os.path.join(COOKIEJAR_LOCAL_STORAGE, self.uuid)}.gz'
+
+    def exists_local_storage(self): # TODO SPLIT in multiple directory ?????
+        return os.path.isfile(self.get_local_storage_file())
+
+    def get_local_storage(self, r_json=False):
+        try:
+            with gzip.open(self.get_local_storage_file()) as f:
+                try:
+                    storage = json.loads(f.read())
+                    if r_json:
+                        return json.dumps(storage, indent=2)
+                    else:
+                        return storage
+                except json.decoder.JSONDecodeError:
+                    return {}
+        except Exception as e:
+            print(e)  # TODO LOGS
+            return {}
+
+    def set_local_storage(self, storage): # TODO check if file already exists
+        with gzip.open(self.get_local_storage_file(), 'w+') as f:
+            f.write(json.dumps(storage).encode())
+
+    def delete_local_storage(self):
+        try:
+            os.remove(self.get_local_storage_file())
+        except Exception as e:
+            print(e)
+
+    def get_meta(self, level=False, nb_cookies=False, cookies=False, local_storage=False, r_json=False):
         meta = {'uuid': self.uuid,
                 'date': self.get_date(),
                 'description': self.get_description(),
@@ -816,6 +854,8 @@ class Cookiejar:
             meta['nb_cookies'] = self.get_nb_cookies()
         if cookies:
             meta['cookies'] = self.get_cookies(r_json=r_json)
+        if local_storage:
+            meta['local_storage'] = self.get_local_storage(r_json=r_json)
         return meta
 
     def add_cookie(self, name, value, cookie_uuid=None, domain=None, httponly=None, path=None, secure=None, text=None):
@@ -867,6 +907,7 @@ class Cookiejar:
     def delete(self):
         for cookie_uuid in self.get_cookies_uuid():
             self.delete_cookie(cookie_uuid)
+        self.delete_local_storage()
         r_crawler.srem(f'cookiejars:user:{self.get_user()}', self.uuid)
         r_crawler.srem('cookiejars:global', self.uuid)
         r_crawler.srem('cookiejars:all', self.uuid)
@@ -920,6 +961,18 @@ def api_edit_cookiejar_description(user_org, user_id, user_role, cookiejar_uuid,
     cookiejar.set_description(description)
     return {'cookiejar_uuid': cookiejar_uuid}, 200
 
+def api_delete_cookiejar_local_storage(user_org, user_id, user_role, cookiejar_uuid):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
+    if resp:
+        return resp
+    cookiejar = Cookiejar(cookiejar_uuid)
+    if not cookiejar.exists():
+        return {'error': 'unknown cookiejar uuid', 'cookiejar_uuid': cookiejar_uuid}, 404
+    if not cookiejar.exists_local_storage():
+        return {'error': 'local storage do not exists', 'cookiejar_uuid': cookiejar_uuid}, 404
+    cookiejar.delete_local_storage()
+    return {'cookiejar_uuid': cookiejar_uuid}, 200
+
 def api_delete_cookiejar(user_org, user_id, user_role, cookiejar_uuid):
     resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'delete')
     if resp:
@@ -933,7 +986,7 @@ def api_get_cookiejar(user_org, user_id, user_role, cookiejar_uuid):
     if resp:
         return resp
     cookiejar = Cookiejar(cookiejar_uuid)
-    meta = cookiejar.get_meta(level=True, cookies=True, r_json=True)
+    meta = cookiejar.get_meta(level=True, cookies=True, local_storage=True, r_json=True)
     return meta, 200
 
 ####  ACL  ####
@@ -946,6 +999,41 @@ def api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role,
         return {"status": "error", "reason": "Access Denied"}, 403
 
 ####  API  ####
+
+
+#########################################################################
+
+# TODO edit existing cookiejat local storage
+def api_import_lacus_cookiejar(user_org, user_id, data, cookiejar_uuid=None):
+    url = data.get('url')
+    storage = data.get('storage')
+
+    if not url:
+        return {'error': 'url not set'}, 400
+    if not storage:
+        return {'error': 'lacus storage not set'}, 400
+
+    cookiejar_uuid = None # TODO edit/replace cookiejar
+    cookies = storage.get('cookies')
+    origins = storage.get('origins')
+
+    if not cookies and not origins:
+        return {'error': 'No cookies or local storage to import'}, 400
+
+    # TODO check if is valid JSON
+
+    # TODO extract DOMAIN
+
+    # Create new cookiejar
+    if not cookiejar_uuid:
+        cookiejar_uuid = create_cookiejar(user_org, user_id, f"{url} - imported from lacus", 1, None)
+    cookiejar = Cookiejar(cookiejar_uuid)
+
+    cookiejar.set_local_storage(storage)
+
+    return {'cookiejar_uuid': cookiejar_uuid}, 200
+
+#########################################################################
 
 # # # # # # # #
 #             #
@@ -1071,6 +1159,8 @@ def api_create_cookie(user_org, user_id, user_role, cookiejar_uuid, cookie_dict)
     resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
     if resp:
         return resp
+    if not cookie_dict:
+        return {'error': 'no cookies provided'}, 400
     if 'name' not in cookie_dict or 'value' not in cookie_dict or not cookie_dict['name'] or not cookie_dict['value']:
         return {'error': 'cookie name or value not provided'}, 400
     cookiejar = Cookiejar(cookiejar_uuid)
@@ -2039,6 +2129,14 @@ class CrawlerTask:
             return cookiejar.get_cookies()
         else:
             return []
+
+    def get_local_storage(self):
+        cookiejar = self.get_cookiejar()
+        if cookiejar:
+            cookiejar = Cookiejar(cookiejar)
+            return cookiejar.get_local_storage()
+        else:
+            return None
 
     def get_header(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'header')

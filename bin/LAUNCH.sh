@@ -206,6 +206,8 @@ function launching_scripts {
     sleep 0.1
     screen -S "Script_AIL" -X screen -t "D4_client" bash -c "cd ${AIL_BIN}/core; ${ENV_PY} ./D4_client.py; read x"
     sleep 0.1
+    screen -S "Script_AIL" -X screen -t "Translation" bash -c "cd ${AIL_BIN}/modules; ${ENV_PY} ./Translation.py; read x"
+    sleep 0.1
 
     screen -S "Script_AIL" -X screen -t "UpdateBackground" bash -c "cd ${AIL_BIN}; ${ENV_PY} ./update-background.py; read x"
     sleep 0.1
@@ -619,7 +621,7 @@ function launch_tests() {
   echo -e $GREEN"\t* Flask:   $isflasked"$DEFAULT
   echo -e ""
   echo -e ""
-  python3 -m nose2 --start-dir $tests_dir --coverage $bin_dir --with-coverage test_api test_modules
+  python3 -m nose2 --start-dir $tests_dir --coverage $bin_dir --with-coverage test_api test_modules test_api_crawler
   exit $?
 }
 

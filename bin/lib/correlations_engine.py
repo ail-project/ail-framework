@@ -41,6 +41,7 @@ config_loader = None
 ##################################
 
 CORRELATION_TYPES_BY_OBJ = {
+    "author": ["pdf"],
     "barcode": ["chat", "cve", "cryptocurrency", "decoded", "domain", "image", "message", "screenshot"],
     "chat": ["barcode", "chat-subchannel", "chat-thread", "cryptocurrency", "cve", "decoded", "domain", "image", "message", "ocr", "pgp", "user-account"],
     "chat-subchannel": ["chat", "chat-thread", "image", "message", "ocr", "user-account"],
@@ -52,16 +53,17 @@ CORRELATION_TYPES_BY_OBJ = {
     "domain": ["barcode", "chat", "cve", "cookie-name", "cryptocurrency", "dom-hash", "decoded", "etag", "favicon", "gtracker", "hhhash", "item", "mail", "message", "pgp", "screenshot", "ssh-key", "title", "username"],
     "dom-hash": ["domain", "item"],
     "etag": ["domain"],
-    "favicon": ["domain", "item"],  # TODO Decoded
-    "file-name": ["chat", "item", "message"],
+    "favicon": ["domain", "pdf", "item"],  # TODO Decoded
+    "file-name": ["chat", "item", "message", "pdf"],
     "gtracker": ["domain", "item"],
     "hhhash": ["domain"],
     "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "qrcode", "user-account"],  # TODO subchannel + threads ????
     "ip": ["ssh-key"],
-    "item": ["cve", "cryptocurrency", "decoded", "domain", "dom-hash", "favicon", "file-name", "gtracker", "mail", "message", "pgp", "screenshot", "title", "username"],  # chat ???
+    "item": ["cve", "cryptocurrency", "decoded", "domain", "dom-hash", "favicon", "file-name", "gtracker", "mail", "message", "pdf", "pgp", "screenshot", "title", "username"],  # chat ???
     "mail": ["domain", "item", "message"],  # chat ??
-    "message": ["barcode", "chat", "chat-subchannel", "chat-thread", "cve", "cryptocurrency", "decoded", "domain", "file-name", "image", "item", "mail", "ocr", "pgp", "user-account"],
+    "message": ["barcode", "chat", "chat-subchannel", "chat-thread", "cve", "cryptocurrency", "decoded", "domain", "file-name", "image", "item", "mail", "ocr", "pdf", "pgp", "user-account"],
     "ocr": ["chat", "chat-subchannel", "chat-thread", "cve", "cryptocurrency", "decoded", "image", "message", "pgp", "user-account"],
+    "pdf": ["author", "chat", "file-name", "item", "message"],
     "pgp": ["chat", "domain", "item", "message", "ocr"],
     "qrcode": ["chat", "cve", "cryptocurrency", "decoded", "domain", "image", "message", "screenshot"],     # "chat-subchannel", "chat-thread" ?????
     "screenshot": ["barcode", "domain", "item", "qrcode"],
@@ -230,6 +232,8 @@ def _get_correlations_graph_node(links, nodes, meta, obj_type, subtype, obj_id, 
 
     obj_correlations = get_correlations(obj_type, subtype, obj_id, filter_types=filter_types)
     # print(obj_correlations)
+
+    # add direct correlation
     for correl_type in obj_correlations:
         for str_obj in obj_correlations[correl_type]:
             subtype2, obj2_id = str_obj.split(':', 1)
@@ -245,10 +249,14 @@ def _get_correlations_graph_node(links, nodes, meta, obj_type, subtype, obj_id, 
 
             if len(nodes) > max_nodes != 0:
                 meta['complete'] = False
-                break
+                return None
             nodes.add(obj2_str_id)
             links.add((obj_str_id, obj2_str_id))
 
+    # level + 1
+    for correl_type in obj_correlations:
+        for str_obj in obj_correlations[correl_type]:
+            subtype2, obj2_id = str_obj.split(':', 1)
             if level > 0:
                 next_level = level - 1
                 _get_correlations_graph_node(links, nodes, meta, correl_type, subtype2, obj2_id, next_level, max_nodes, filter_types=filter_types, objs_hidden=objs_hidden, previous_str_obj=obj_str_id)

@@ -19,6 +19,7 @@ from lib import Tag
 
 from lib import chats_viewer
 
+from lib.objects import Authors
 from lib.objects import BarCodes
 from lib.objects import Chats
 from lib.objects import ChatSubChannels
@@ -40,6 +41,7 @@ from lib.objects import IPAddresses
 from lib.objects import Mails
 from lib.objects import Messages
 from lib.objects import Ocrs
+from lib.objects import PDFs
 from lib.objects import Pgps
 from lib.objects import QrCodes
 from lib.objects import Screenshots
@@ -53,6 +55,7 @@ from lib.objects import Usernames
 # config_loader = None
 # TODO INIT objs classes ????
 OBJECTS_CLASS = {
+    'author': {'obj': Authors.Author, 'objs': Authors.Authors},
     'barcode': {'obj': BarCodes.Barcode, 'objs': BarCodes.Barcodes},
     'chat': {'obj': Chats.Chat, 'objs': Chats.Chats},
     'chat-subchannel': {'obj': ChatSubChannels.ChatSubChannel, 'objs': None}, ######   ######
@@ -74,6 +77,7 @@ OBJECTS_CLASS = {
     'mail': {'obj': Mails.Mail, 'objs': Mails.Mails},
     'message': {'obj': Messages.Message, 'objs': None}, #############################################################
     'ocr': {'obj': Ocrs.Ocr, 'objs': Ocrs.Ocrs},
+    'pdf': {'obj': PDFs.PDF, 'objs': PDFs.PDFs},
     'pgp': {'obj': Pgps.Pgp, 'objs': Pgps.Pgps},
     'qrcode': {'obj': QrCodes.Qrcode, 'objs': QrCodes.Qrcodes},
     'screenshot': {'obj': Screenshots.Screenshot, 'objs': None}, ####################################################################################################
@@ -316,6 +320,10 @@ def get_object_card_meta(obj_type, subtype, id, related_btc=False):
         meta['size'] = obj.get_size()
         meta["vt"] = obj.get_meta_vt()
         meta["vt"]["status"] = obj.is_vt_enabled()
+    if obj.get_type() == 'pdf':
+        meta['author'] = obj.get_author()
+        meta["file-names"] = obj.get_file_names()
+        meta["markdown_id"] = obj.get_markdown_id()
     # TAGS MODAL
     meta["add_tags_modal"] = Tag.get_modal_add_tags(obj.id, obj.get_type(), obj.get_subtype(r_str=True))
     return meta

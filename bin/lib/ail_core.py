@@ -16,22 +16,22 @@ r_serv_db = config_loader.get_db_conn("Kvrocks_DB")
 r_object = config_loader.get_db_conn("Kvrocks_Objects")
 config_loader = None
 
-AIL_OBJECTS = {'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cookie-name', 'cve', 'cryptocurrency',
+AIL_OBJECTS = {'author', 'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cookie-name', 'cve', 'cryptocurrency',
                'decoded', 'domain', 'dom-hash', 'etag', 'favicon', 'file-name', 'gtracker', 'hhhash', 'ip',
-               'item', 'image', 'mail', 'message', 'ocr', 'pgp', 'qrcode', 'ssh-key', 'screenshot', 'title',
+               'item', 'image', 'mail', 'message', 'ocr', 'pdf', 'pgp', 'qrcode', 'ssh-key', 'screenshot', 'title',
                'user-account', 'username'}
 
 AIL_OBJECTS_WITH_SUBTYPES = {'chat', 'chat-subchannel', 'cryptocurrency', 'pgp', 'username', 'user-account'}
 
 # TODO by object TYPE ???? correlation
-AIL_OBJECTS_CORRELATIONS_DEFAULT = {'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cve', 'cryptocurrency',
+AIL_OBJECTS_CORRELATIONS_DEFAULT = {'author', 'barcode', 'chat', 'chat-subchannel', 'chat-thread', 'cve', 'cryptocurrency',
                                     'decoded', 'domain', 'dom-hash', 'favicon', 'file-name', 'gtracker', 'item',
-                                    'image', 'ip', 'mail', 'message', 'ocr', 'pgp', 'qrcode', 'screenshot',
+                                    'image', 'ip', 'mail', 'message', 'ocr', 'pdf', 'pgp', 'qrcode', 'screenshot',
                                     'ssh-key', 'title', 'user-account', 'username'}
 
-AIL_OBJS_QUEUES = {'barcode', 'decoded', 'image', 'item', 'message', 'ocr', 'pgp', 'qrcode', 'screenshot', 'title'}   # ADD TAGS ???
+AIL_OBJS_QUEUES = {'barcode', 'decoded', 'file-name', 'image', 'item', 'message', 'ocr', 'pgp', 'qrcode', 'screenshot', 'title'}   # ADD TAGS ???
 
-AIL_OBJS_TRACKED = {'barcode', 'decoded', 'item', 'message', 'ocr', 'pgp', 'qrcode', 'title'}
+AIL_OBJS_TRACKED = {'barcode', 'decoded', 'file-name', 'item', 'message', 'ocr', 'pgp', 'qrcode', 'title'}
 
 AIL_OBJS_RETRO_HUNTED = {'decoded', 'item', 'message', 'ocr'}  # TODO PGP, TITLE
 
@@ -114,6 +114,25 @@ def get_obj_queued():
 
 def get_objects_tracked():
     return AIL_OBJS_TRACKED  # TODO add new test to check if == sorted() return True
+
+def get_nb_objects_tracked():
+    return len(AIL_OBJS_TRACKED)
+
+def is_tracked_object(obj_type):
+    return obj_type in AIL_OBJS_TRACKED
+
+def is_tracked_objects(obj_types):
+    for obj_type in obj_types:
+        if not is_tracked_object(obj_type):
+            return False
+    return True
+
+def sanitize_tracked_objects(objs):
+    l_types = []
+    for obj in objs:
+        if is_tracked_object(obj):
+            l_types.append(obj)
+    return l_types
 
 def get_objects_retro_hunted():
     return AIL_OBJS_RETRO_HUNTED
