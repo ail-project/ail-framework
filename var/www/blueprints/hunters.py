@@ -571,6 +571,8 @@ def retro_hunt_show_task():
     task_uuid = request.args.get('uuid', None)
     objs = request.args.get('objs', False)
 
+    page = request.args.get('page', 1, type=int)
+        per_page = 15
     # date_from_item = request.args.get('date_from')
     # date_to_item = request.args.get('date_to')
     # if date_from_item:
@@ -591,13 +593,16 @@ def retro_hunt_show_task():
     dict_task['filters'] = json.dumps(dict_task['filters'], indent=4)
 
     if objs:
-        dict_task['objs'] = ail_objects.get_objects_meta(retro_hunt.get_objs(), options={'last_full_date'}, flask_context=True)
+        
+        pagination = retro_hunt.get_objs(page=page, per_page=per_page)
+        dict_task['objs'] = ail_objects.get_objects_meta(pagination.items, options={'last_full_date'}, flask_context=True)
     else:
         dict_task['objs'] = []
+        pagination = None
 
     return render_template("show_retro_hunt.html", dict_task=dict_task,
                            rule_content=rule_content,
-                           bootstrap_label=bootstrap_label)
+                           bootstrap_label=bootstrap_label, pagination=pagination)
 
 
 @hunters.route('/retro_hunt/add', methods=['GET', 'POST'])

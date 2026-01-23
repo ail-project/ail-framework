@@ -1761,13 +1761,15 @@ class RetroHunt:
                 objs[obj_type] = nb
         return objs
 
-    def get_objs(self):
+    def get_objs(self, page=1, per_page=15):
         objs = []
         for obj_type in get_objects_retro_hunted():
             for obj in self.get_objs_by_type(obj_type):
                 subtype, obj_id = obj.split(':', 1)
                 objs.append((obj_type, subtype, obj_id))
-        return objs
+        
+        paginated_objs = ail_core.paginate_iterator(objs, page=page, per_page=per_page)
+        return paginated_objs
 
     def add(self, obj_type, subtype, obj_id):
         # match by object type:
