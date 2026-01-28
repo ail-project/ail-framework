@@ -12,6 +12,15 @@ from io import BytesIO
 from flask import url_for
 from pymisp import MISPObject
 
+try:
+    from PIL import Image as PILImage
+    from PIL.ExifTags import TAGS
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:
+    IMAGEHASH_AVAILABLE = False
+    TAGS = None
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
@@ -115,6 +124,66 @@ class Image(AbstractDaterangeObject):
         if description:
             description = description.replace("`", ' ')
         return description
+
+    def calculate_phash(self):
+        """Calculate perceptual hash (pHash) for the image."""
+        if not IMAGEHASH_AVAILABLE:
+            return None
+        
+        if not self.exists():
+            return None
+        
+        try:
+            filepath = self.get_filepath()
+            with PILImage.open(filepath) as img:
+                phash = imagehash.phash(img)
+                return str(phash)
+        except Exception as e:
+            self.logger.warning(f"Failed to calculate phash for image {self.id}: {e}")
+            return None
+
+    def get_phash(self):
+        """Get perceptual hash, calculating it if not stored."""
+        phash = self._get_field('phash')
+        if phash:
+            return phash
+        
+        # Calculate and store if not exists
+        phash = self.calculate_phash()
+        if phash:
+            self._set_field('phash', phash)
+        return phash
+
+    def set_phash(self, phash_value):
+        """Store perceptual hash in image metadata."""
+        if phash_value:
+            self._set_field('phash', phash_value)
+
+    def compare_phash(self, other_phash):
+        """
+        Compare this image's phash with another phash using Hamming distance.
+        
+        Args:
+            other_phash: Another phash value (string) to compare with
+            
+        Returns:
+            int: Hamming distance (0-64), or None if either phash is invalid
+        """
+        if not IMAGEHASH_AVAILABLE:
+            return None
+        
+        current_phash = self.get_phash()
+        if not current_phash or not other_phash:
+            return None
+        
+        try:
+            # Convert hex strings to imagehash objects for comparison
+            hash1 = imagehash.hex_to_hash(current_phash)
+            hash2 = imagehash.hex_to_hash(other_phash)
+            return hash1 - hash2  # Hamming distance
+        except Exception as e:
+            self.logger.warning(f"Failed to compare phash for image {self.id}: {e}")
+            return None
 
     def get_search_document(self):
         global_id = self.get_global_id()
