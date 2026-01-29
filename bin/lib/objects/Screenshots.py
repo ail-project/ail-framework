@@ -11,13 +11,6 @@ from io import BytesIO
 from flask import url_for
 from pymisp import MISPObject
 
-try:
-    from PIL import Image as PILImage
-    import imagehash
-    IMAGEHASH_AVAILABLE = True
-except ImportError:
-    IMAGEHASH_AVAILABLE = False
-
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
@@ -108,9 +101,9 @@ class Screenshot(AbstractObject):
     def get_description_models(self):
         models = []
         for key in self._get_fields_keys():
-            if key.startswith('desc:'):
-                model = key[5:]
-                models.append(model)
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            if key_str.startswith('desc:'):
+                models.append(key_str[5:])
         return models
 
     def add_description_model(self, model, description):
@@ -120,40 +113,6 @@ class Screenshot(AbstractObject):
         if not model:
             model = get_default_image_description_model()
         return self._get_field(f'desc:{model}')
-
-    def calculate_phash(self):
-        """Calculate perceptual hash (pHash) for the screenshot."""
-        if not IMAGEHASH_AVAILABLE:
-            return None
-        
-        if not self.exists():
-            return None
-        
-        try:
-            filepath = self.get_filepath()
-            with PILImage.open(filepath) as img:
-                phash = imagehash.phash(img)
-                return str(phash)
-        except Exception as e:
-            # Log error if needed
-            return None
-
-    def get_phash(self):
-        """Get perceptual hash, calculating it if not stored."""
-        phash = self._get_field('phash')
-        if phash:
-            return phash
-        
-        # Calculate and store if not exists
-        phash = self.calculate_phash()
-        if phash:
-            self._set_field('phash', phash)
-        return phash
-
-    def set_phash(self, phash_value):
-        """Store perceptual hash in screenshot metadata."""
-        if phash_value:
-            self._set_field('phash', phash_value)
 
     def get_search_document(self):
         global_id = self.get_global_id()

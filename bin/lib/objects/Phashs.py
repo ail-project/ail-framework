@@ -7,6 +7,13 @@ import sys
 from flask import url_for
 from pymisp import MISPObject
 
+try:
+    from PIL import Image as PILImage
+    import imagehash
+    IMAGEHASH_AVAILABLE = True
+except ImportError:
+    IMAGEHASH_AVAILABLE = False
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
@@ -18,6 +25,81 @@ config_loader = ConfigLoader()
 r_objects = config_loader.get_db_conn("Kvrocks_Objects")
 baseurl = config_loader.get_config_str("Notifications", "ail_domain")
 config_loader = None
+
+
+# ------------------------------------------------------------------------------
+# pHash calculation and comparison (all pHash logic lives here)
+# ------------------------------------------------------------------------------
+
+def calculate_phash_from_filepath(filepath):
+    """
+    Calculate perceptual hash (pHash) for an image file.
+
+    Args:
+        filepath: Path to the image file.
+
+    Returns:
+        phash string (16-char hex), or None if unavailable or on error.
+    """
+    if not IMAGEHASH_AVAILABLE:
+        return None
+    if not filepath or not os.path.isfile(filepath):
+        return None
+    try:
+        with PILImage.open(filepath) as img:
+            phash = imagehash.phash(img)
+            return str(phash)
+    except Exception:
+        return None
+
+
+def compare_phash(phash1_str, phash2_str):
+    """
+    Compare two phash values using Hamming distance.
+
+    Args:
+        phash1_str: First phash value (hex string).
+        phash2_str: Second phash value (hex string).
+
+    Returns:
+        int: Hamming distance (0-64), or None if either phash is invalid.
+    """
+    if not IMAGEHASH_AVAILABLE:
+        return None
+    if not phash1_str or not phash2_str:
+        return None
+    try:
+        hash1 = imagehash.hex_to_hash(phash1_str)
+        hash2 = imagehash.hex_to_hash(phash2_str)
+        return hash1 - hash2  # Hamming distance
+    except Exception:
+        return None
+
+
+def get_phash_from_correlation(obj):
+    """
+    Get the phash value for an object (image/screenshot) from the correlation engine.
+    Use this instead of storing/reading phash on the object itself.
+
+    Args:
+        obj: An object with get_correlation() (e.g. Image, Screenshot).
+
+    Returns:
+        phash id string, or None if no phash correlation.
+    """
+    correl = obj.get_correlation('phash')
+    if not correl:
+        return None
+    phash_ids = correl.get('phash') or []
+    if not phash_ids:
+        return None
+    first = next(iter(phash_ids), None)
+    if not first:
+        return None
+    # Stored as "subtype:id"; phash has subtype ''
+    if ':' in first:
+        return first.split(':', 1)[-1]
+    return first
 
 
 class Phash(AbstractDaterangeObject):

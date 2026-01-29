@@ -4,6 +4,7 @@
 import os
 import sys
 import unittest
+from unittest.mock import MagicMock, patch
 
 import gzip
 from base64 import b64encode
@@ -20,8 +21,10 @@ from modules.Categ import Categ
 from modules.CreditCards import CreditCards
 from modules.DomClassifier import DomClassifier
 from modules.Global import Global
+from modules.ImagePhash import Phash as ImagePhash
 from modules.Keys import Keys
 from modules.Onion import Onion
+from modules.PhashCorrelation import PhashCorrelation
 from modules.Telegram import Telegram
 
 # project packages
@@ -264,7 +267,7 @@ class TestModulePhashCorrelationFindSimilar(unittest.TestCase):
             mock_config_loader.get_config_int.return_value = 8
             self.module = PhashCorrelation()
 
-    @patch('modules.PhashCorrelation.Images.compare_phash')
+    @patch('modules.PhashCorrelation.Phashs.compare_phash')
     @patch('modules.PhashCorrelation.Phashs')
     def test_find_similar_phashes_skips_self(self, mock_phashes_module, mock_compare_phash):
         """find_similar_phashes() should skip comparing phash to itself."""
@@ -295,7 +298,7 @@ class TestModulePhashCorrelationFindSimilar(unittest.TestCase):
         # Should not have called compare_phash with self
         mock_compare_phash.assert_called_once_with('abc123', 'def456')
 
-    @patch('modules.PhashCorrelation.Images.compare_phash')
+    @patch('modules.PhashCorrelation.Phashs.compare_phash')
     @patch('modules.PhashCorrelation.Phashs')
     def test_find_similar_phashes_skips_nonexistent(self, mock_phashes_module, mock_compare_phash):
         """find_similar_phashes() should skip phash objects that don't exist."""
@@ -324,7 +327,7 @@ class TestModulePhashCorrelationFindSimilar(unittest.TestCase):
         # nonexistent phash should not be compared
         self.assertNotIn('def456', [r[0] for r in result])
 
-    @patch('modules.PhashCorrelation.Images.compare_phash')
+    @patch('modules.PhashCorrelation.Phashs.compare_phash')
     @patch('modules.PhashCorrelation.Phashs')
     def test_find_similar_phashes_filters_by_distance(self, mock_phashes_module, mock_compare_phash):
         """find_similar_phashes() should only return phashes within max_hamming_distance."""
@@ -361,7 +364,7 @@ class TestModulePhashCorrelationFindSimilar(unittest.TestCase):
         self.assertEqual(result[0][0], 'close123')
         self.assertEqual(result[0][1], 5)
 
-    @patch('modules.PhashCorrelation.Images.compare_phash')
+    @patch('modules.PhashCorrelation.Phashs.compare_phash')
     @patch('modules.PhashCorrelation.Phashs')
     def test_find_similar_phashes_handles_none_distance(self, mock_phashes_module, mock_compare_phash):
         """find_similar_phashes() should skip phashes when compare_phash returns None."""
@@ -392,7 +395,7 @@ class TestModulePhashCorrelationFindSimilar(unittest.TestCase):
         result = self.module.find_similar_phashes(None, max_hamming_distance=10)
         self.assertEqual(result, [])
 
-    @patch('modules.PhashCorrelation.Images.compare_phash')
+    @patch('modules.PhashCorrelation.Phashs.compare_phash')
     @patch('modules.PhashCorrelation.Phashs')
     def test_find_similar_phashes_uses_module_default_distance(self, mock_phashes_module, mock_compare_phash):
         """find_similar_phashes() should use module's max_hamming_distance when not provided."""
@@ -477,6 +480,9 @@ class TestModulePhashCorrelationCompute(unittest.TestCase):
         mock_phash_obj.id = self.PHASH_1
         mock_phash_obj.is_correlated.return_value = False
         self.module.obj = mock_phash_obj
+        
+        # Mock logger so we can assert on debug calls
+        self.module.logger = MagicMock()
         
         # Mock find_similar_phashes to return similar phashes (with realistic hex values)
         self.module.find_similar_phashes = MagicMock(return_value=[
@@ -688,156 +694,122 @@ class TestModuleImagePhashCompute(unittest.TestCase):
             mock_ail_queue.return_value = mock_queue_instance
             self.module = ImagePhash()
 
-    def test_compute_returns_none_if_phash_calculation_fails(self):
+    @patch('modules.ImagePhash.Phashs.calculate_phash_from_filepath')
+    def test_compute_returns_none_if_phash_calculation_fails(self, mock_calc_phash):
         """compute() should return None if phash calculation fails."""
-        # Mock image object
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = None  # Calculation fails
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_calc_phash.return_value = None
         self.module.obj = mock_image
-        
+
         result = self.module.compute('20240101')
-        
+
         self.assertIsNone(result)
-        mock_image.calculate_phash.assert_called_once()
-        # Should not call set_phash if calculation fails
-        mock_image.set_phash.assert_not_called()
+        mock_calc_phash.assert_called_once_with('/path/to/image')
 
     @patch('modules.ImagePhash.Phashs')
-    def test_compute_stores_phash_in_image_metadata(self, mock_phashes_module):
-        """compute() should store phash in AIL database metadata for the image object.
-        
-        Note: This stores in AIL's database (meta:image:{id} -> phash field),
-        NOT in the image file's EXIF/metadata.
-        """
-        # Mock image object
+    def test_compute_does_not_store_phash_on_image_metadata(self, mock_phashes_module):
+        """compute() uses correlation only; does not store phash on image metadata."""
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = self.PHASH_VALUE
-        self.module.obj = mock_image
-        
-        # Mock Phash object creation
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_phashes_module.calculate_phash_from_filepath.return_value = self.PHASH_VALUE
         mock_phash_obj = MagicMock()
         mock_phashes_module.create.return_value = mock_phash_obj
-        
-        # Mock add_message_to_queue
+        self.module.obj = mock_image
         self.module.add_message_to_queue = MagicMock()
-        
+
         self.module.compute('20240101')
-        
-        # Should store phash in image metadata
-        mock_image.set_phash.assert_called_once_with(self.PHASH_VALUE)
+
+        # Phash is not stored on image; retrieval is via get_correlation('phash').get('phash')
+        self.assertFalse(mock_image.set_phash.called)
 
     @patch('modules.ImagePhash.Phashs')
     def test_compute_creates_phash_object(self, mock_phashes_module):
         """compute() should create Phash object using Phashs.create()."""
-        # Mock image object
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = self.PHASH_VALUE
-        self.module.obj = mock_image
-        
-        # Mock Phash object creation
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_phashes_module.calculate_phash_from_filepath.return_value = self.PHASH_VALUE
         mock_phash_obj = MagicMock()
         mock_phashes_module.create.return_value = mock_phash_obj
-        
-        # Mock add_message_to_queue
+        self.module.obj = mock_image
         self.module.add_message_to_queue = MagicMock()
-        
+
         self.module.compute('20240101')
-        
-        # Should create Phash object with phash value
+
+        mock_phashes_module.calculate_phash_from_filepath.assert_called_once_with('/path/to/image')
         mock_phashes_module.create.assert_called_once_with(self.PHASH_VALUE)
 
     @patch('modules.ImagePhash.Phashs')
     def test_compute_creates_phash_image_correlation(self, mock_phashes_module):
         """compute() should create Phash ↔ Image correlation using add()."""
-        # Mock image object
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = self.PHASH_VALUE
-        self.module.obj = mock_image
-        
-        # Mock Phash object
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_phashes_module.calculate_phash_from_filepath.return_value = self.PHASH_VALUE
         mock_phash_obj = MagicMock()
         mock_phashes_module.create.return_value = mock_phash_obj
-        
-        # Mock add_message_to_queue
+        self.module.obj = mock_image
         self.module.add_message_to_queue = MagicMock()
-        
+
         date = '20240101'
         self.module.compute(date)
-        
-        # Should create correlation using add() method
+
         mock_phash_obj.add.assert_called_once_with(date, mock_image)
 
     @patch('modules.ImagePhash.Phashs')
     def test_compute_queues_phash_to_correlation_queue(self, mock_phashes_module):
         """compute() should queue Phash object to PhashCorrelation queue."""
-        # Mock image object
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = self.PHASH_VALUE
-        self.module.obj = mock_image
-        
-        # Mock Phash object
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_phashes_module.calculate_phash_from_filepath.return_value = self.PHASH_VALUE
         mock_phash_obj = MagicMock()
         mock_phashes_module.create.return_value = mock_phash_obj
-        
-        # Mock add_message_to_queue
+        self.module.obj = mock_image
         self.module.add_message_to_queue = MagicMock()
-        
+
         date = '20240101'
         self.module.compute(date)
-        
-        # Should queue phash object to PhashCorrelation queue
+
         self.module.add_message_to_queue.assert_called_once_with(
             obj=mock_phash_obj,
             queue='PhashCorrelation',
             message=date
         )
 
-    def test_compute_propagates_exceptions_from_calculate_phash(self):
-        """compute() should propagate exceptions from calculate_phash().
-        
-        Note: ImagePhash.compute() does not have exception handling,
-        so exceptions will propagate up to the caller (AbstractModule).
-        """
-        # Mock image object
+    @patch('modules.ImagePhash.Phashs.calculate_phash_from_filepath')
+    def test_compute_propagates_exceptions_from_calculate_phash(self, mock_calc_phash):
+        """compute() should propagate exceptions from phash calculation."""
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.side_effect = Exception("Database error")
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_calc_phash.side_effect = Exception("Database error")
         self.module.obj = mock_image
-        
-        # Should propagate exception (no try/except in compute())
+
         with self.assertRaises(Exception) as context:
             self.module.compute('20240101')
-        
-        # Verify it's the expected exception
+
         self.assertIn("Database error", str(context.exception))
 
     @patch('modules.ImagePhash.Phashs')
     def test_compute_complete_workflow(self, mock_phashes_module):
-        """compute() should complete the full workflow: calculate, store, create, correlate, queue."""
-        # Mock image object
+        """compute() should complete: calculate from filepath, create Phash, correlate, queue."""
         mock_image = MagicMock()
         mock_image.id = 'test_image_123'
-        mock_image.calculate_phash.return_value = self.PHASH_VALUE
-        self.module.obj = mock_image
-        
-        # Mock Phash object
+        mock_image.get_filepath.return_value = '/path/to/image'
+        mock_phashes_module.calculate_phash_from_filepath.return_value = self.PHASH_VALUE
         mock_phash_obj = MagicMock()
         mock_phashes_module.create.return_value = mock_phash_obj
-        
-        # Mock add_message_to_queue
+        self.module.obj = mock_image
         self.module.add_message_to_queue = MagicMock()
-        
+
         date = '20240101'
         self.module.compute(date)
-        
-        # Verify complete workflow
-        mock_image.calculate_phash.assert_called_once()
-        mock_image.set_phash.assert_called_once_with(self.PHASH_VALUE)
+
+        mock_phashes_module.calculate_phash_from_filepath.assert_called_once_with('/path/to/image')
         mock_phashes_module.create.assert_called_once_with(self.PHASH_VALUE)
         mock_phash_obj.add.assert_called_once_with(date, mock_image)
         self.module.add_message_to_queue.assert_called_once_with(

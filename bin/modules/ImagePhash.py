@@ -42,23 +42,20 @@ class Phash(AbstractModule):
         image = self.get_obj()
         date = message
 
-        # Calculate phash
-        phash_value = image.calculate_phash()
+        # Calculate phash using Phashs (all pHash logic lives in lib/objects/Phashs)
+        phash_value = Phashs.calculate_phash_from_filepath(image.get_filepath())
         if not phash_value:
             self.logger.warning(f'Failed to calculate phash for image {image.id}')
             return None
 
-        # Store phash in image metadata (for backward compatibility and quick access)
-        image.set_phash(phash_value)
-        
         # Create or get Phash object
         phash_obj = Phashs.create(phash_value)
-        
+
         # Correlate Phash ↔ Image (using add() which automatically creates correlation)
         phash_obj.add(date, image)
-        
+
         self.logger.debug(f'Created Phash object {phash_value} for image {image.id}')
-        
+
         # Queue Phash object for correlation processing
         self.add_message_to_queue(obj=phash_obj, queue='PhashCorrelation', message=date)
 

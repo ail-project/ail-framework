@@ -20,7 +20,6 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from modules.abstract_module import AbstractModule
 from lib.objects import Phashs
-from lib.objects import Images
 
 
 class PhashCorrelation(AbstractModule):
@@ -73,8 +72,7 @@ class PhashCorrelation(AbstractModule):
                 continue
             
             other_phash_value = phash_obj.id
-            # Use compare_phash utility function from Images module
-            distance = Images.compare_phash(phash_value, other_phash_value)
+            distance = Phashs.compare_phash(phash_value, other_phash_value)
             if distance is not None and distance <= max_hamming_distance:
                 similar_phashes.append((other_phash_value, distance))
         
