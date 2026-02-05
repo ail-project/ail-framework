@@ -118,7 +118,7 @@ class PhashCorrelation(AbstractModule):
         
         # Iterate through all phashes
         phashs = Phashs.Phashs()
-        for phash_id in phashs.get_ids_iterator():
+        for phash_id in phashs.get_iterator_ids():
             distance = Phashs.hamming_distance(query_phash, phash_id)
             
             if distance is not None and distance <= self.max_distance:

@@ -5,7 +5,37 @@ import os
 import sys
 import unittest
 
+# Ensure AIL env and config exist so ConfigLoader can be imported (e.g. when running with uv)
+if 'AIL_HOME' not in os.environ:
+    os.environ['AIL_HOME'] = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+if 'AIL_BIN' not in os.environ:
+    os.environ['AIL_BIN'] = os.path.join(os.environ['AIL_HOME'], 'bin')
+config_dir = os.path.join(os.environ['AIL_HOME'], 'configs')
+core_cfg = os.path.join(config_dir, 'core.cfg')
+core_sample = os.path.join(config_dir, 'core.cfg.sample')
+if not os.path.exists(core_cfg) and os.path.exists(core_sample):
+    import shutil
+    shutil.copy(core_sample, core_cfg)
+
 sys.path.append(os.environ['AIL_BIN'])
+
+# Stub optional heavy deps so Phashs import chain loads without full AIL install (gcld3, lexilang, libretranslatepy)
+import types
+if 'gcld3' not in sys.modules:
+    _gcld3 = types.ModuleType('gcld3')
+    _gcld3.NNetLanguageIdentifier = type('NNetLanguageIdentifier', (), {})
+    sys.modules['gcld3'] = _gcld3
+if 'lexilang' not in sys.modules:
+    _lexilang = types.ModuleType('lexilang')
+    _lexilang.detector = types.ModuleType('lexilang.detector')
+    _lexilang.detector.detect = lambda x: ('eng', 1.0)
+    sys.modules['lexilang'] = _lexilang
+    sys.modules['lexilang.detector'] = _lexilang.detector
+if 'libretranslatepy' not in sys.modules:
+    _lt = types.ModuleType('libretranslatepy')
+    _lt.LibreTranslateAPI = type('LibreTranslateAPI', (), {})
+    sys.modules['libretranslatepy'] = _lt
+
 ##################################
 # Import Project packages
 ##################################
@@ -24,13 +54,15 @@ class TestPhashObject(unittest.TestCase):
         """Set up test fixtures"""
         self.test_phash = "a1b2c3d4e5f67890"
         self.phash_obj = Phashs.Phash(self.test_phash)
-        
+        # Ensure clean state (e.g. from previous test run or test order)
+        r_objects.delete(f'meta:phash:{self.test_phash}')
+        r_objects.srem('phash:all', self.test_phash)
+
     def tearDown(self):
         """Clean up after tests"""
-        # Clean up test phash object
-        if self.phash_obj.exists():
-            r_objects.delete(f'meta:phash:{self.test_phash}')
-        
+        # Clean up test phash object (meta key and remove from phash:all so exists() is False next run)
+        r_objects.delete(f'meta:phash:{self.test_phash}')
+        r_objects.srem('phash:all', self.test_phash)
         # Clean up BK-tree index
         root = r_objects.get('phash:bktree:root')
         if root:
@@ -353,18 +385,25 @@ class TestCalculatePhash(unittest.TestCase):
         self.assertIsNone(result)
 
 
+# Integration test: phash from a real image (e.g. via pipeline or ingest) can be added
+# in an integration test suite rather than as a unit test here.
+
+
 class TestCreatePhash(unittest.TestCase):
     """Test Phash object creation with index"""
 
     def setUp(self):
         """Set up test fixtures"""
         self.test_phash = "9999999999999999"
-        
+        # Ensure clean state so create() runs and adds to BK-tree
+        r_objects.delete(f'meta:phash:{self.test_phash}')
+        r_objects.srem('phash:all', self.test_phash)
+
     def tearDown(self):
         """Clean up after tests"""
-        # Clean up test phash object
+        # Clean up test phash object (meta key and remove from phash:all)
         r_objects.delete(f'meta:phash:{self.test_phash}')
-        
+        r_objects.srem('phash:all', self.test_phash)
         # Clean up BK-tree
         root = r_objects.get('phash:bktree:root')
         if root:

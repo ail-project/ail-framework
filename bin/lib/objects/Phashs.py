@@ -32,6 +32,10 @@ class Phash(AbstractDaterangeObject):
         # TODO: Implement deletion
         pass
 
+    def exists(self):
+        """Exists if id is in phash:all (same as DomHash/HHHash: create() only adds to :all)."""
+        return bool(r_objects.sismember(f'{self.type}:all', self.id))
+
     def get_link(self, flask_context=False):
         if flask_context:
             url = url_for('correlation.show_correlation', type=self.type, id=self.id)
@@ -124,6 +128,31 @@ def calculate_phash(image_content):
         return phash_value
     except ImportError:
         return None
+    except Exception:
+        return None
+
+
+def calculate_phash_from_filepath(filepath):
+    """
+    Calculate perceptual hash from an image file path.
+
+    Args:
+        filepath: Path to image file (relative to AIL_HOME or absolute)
+
+    Returns:
+        str: Phash value as 16-char hex string, or None if calculation fails
+    """
+    if not filepath:
+        return None
+    if not os.path.isabs(filepath):
+        ail_home = os.environ.get('AIL_HOME', '')
+        filepath = os.path.join(ail_home, filepath)
+    if not os.path.isfile(filepath):
+        return None
+    try:
+        with open(filepath, 'rb') as f:
+            content = f.read()
+        return calculate_phash(content)
     except Exception:
         return None
 
@@ -244,17 +273,17 @@ def rebuild_bktree_index():
     Returns:
         int: Number of phashes indexed
     """
-    # Clear existing index
-    root = r_objects.get('phash:bktree:root')
-    if root:
-        r_objects.delete('phash:bktree:root')
-        # Clear all children keys - we'll need to iterate through all phashes
-    
+    # Clear existing index. We must delete all keys matching phash:bktree:* (root and every
+    # node's children), not just phash:bktree:root. Otherwise orphaned phash:bktree:<id>:children
+    # keys remain in Redis and can corrupt the next rebuild or waste memory.
+    for key in r_objects.keys('phash:bktree:*'):
+        r_objects.delete(key)
+
     # Get all phash objects
     phashs = Phashs()
     count = 0
-    
-    for phash_id in phashs.get_ids_iterator():
+
+    for phash_id in phashs.get_iterator_ids():
         add_to_bktree_index(phash_id)
         count += 1
     
