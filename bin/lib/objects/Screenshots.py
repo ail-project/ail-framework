@@ -101,9 +101,9 @@ class Screenshot(AbstractObject):
     def get_description_models(self):
         models = []
         for key in self._get_fields_keys():
-            if key.startswith('desc:'):
-                model = key[5:]
-                models.append(model)
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            if key_str.startswith('desc:'):
+                models.append(key_str[5:])
         return models
 
     def add_description_model(self, model, description):
