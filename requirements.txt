@@ -106,6 +106,9 @@ idna
 publicsuffixlist
 requests
 
+#Openai
+openai
+
 chardet
 
 ##### Old packages
