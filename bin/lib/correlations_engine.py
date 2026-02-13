@@ -57,7 +57,7 @@ CORRELATION_TYPES_BY_OBJ = {
     "file-name": ["chat", "item", "message", "pdf"],
     "gtracker": ["domain", "item"],
     "hhhash": ["domain"],
-    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "qrcode", "user-account"],  # TODO subchannel + threads ????
+    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "phash", "qrcode", "user-account"],  # TODO subchannel + threads ????
     "ip": ["ssh-key"],
     "item": ["cve", "cryptocurrency", "decoded", "domain", "dom-hash", "favicon", "file-name", "gtracker", "mail", "message", "pdf", "pgp", "screenshot", "title", "username"],  # chat ???
     "mail": ["domain", "item", "message"],  # chat ??
@@ -65,6 +65,7 @@ CORRELATION_TYPES_BY_OBJ = {
     "ocr": ["chat", "chat-subchannel", "chat-thread", "cve", "cryptocurrency", "decoded", "image", "message", "pgp", "user-account"],
     "pdf": ["author", "chat", "file-name", "item", "message"],
     "pgp": ["chat", "domain", "item", "message", "ocr"],
+    "phash": ["image", "phash"],
     "qrcode": ["chat", "cve", "cryptocurrency", "decoded", "domain", "image", "message", "screenshot"],     # "chat-subchannel", "chat-thread" ?????
     "screenshot": ["barcode", "domain", "item", "qrcode"],
     "ssh-key": ["domain", "ip"],
