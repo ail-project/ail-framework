@@ -282,7 +282,7 @@ def rebuild_bktree_index():
     # Get all phash objects
     phashs = Phashs()
     count = 0
-
+    
     for phash_id in phashs.get_iterator_ids():
         add_to_bktree_index(phash_id)
         count += 1
