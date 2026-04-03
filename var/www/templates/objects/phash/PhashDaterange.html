@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <title>Phashs - AIL</title>
+	<link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png') }}">
+
+  <!-- Core CSS -->
+	<link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/dataTables.bootstrap.min.css') }}" rel="stylesheet">
+	<link href="{{ url_for('static', filename='css/daterangepicker.min.css') }}" rel="stylesheet">
+
+  <!-- JS -->
+	<script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/popper.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.dataTables.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/dataTables.bootstrap.min.js')}}"></script>
+	<script src="{{ url_for('static', filename='js/moment.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/jquery.daterangepicker.min.js') }}"></script>
+	<script src="{{ url_for('static', filename='js/d3.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/d3/sparklines.js')}}"></script>
+
+	<style>
+		.input-group .form-control {
+			position: unset;
+		}
+	</style>
+</head>
+<body>
+
+	{% include 'nav_bar.html' %}
+
+	<div class="container-fluid">
+		<div class="row">
+
+			{% include 'sidebars/sidebar_objects.html' %}
+
+			<div class="col-12 col-lg-10" id="core_content">
+
+				<div class="row">
+					<div class="col-xl-10">
+						<div class="mt-1" id="barchart_type"></div>
+                    </div>
+
+					<div class="col-xl-2">
+						<div class="card mb-3 mt-2" style="background-color:#d9edf7;">
+						  <div class="card-body text-center py-2">
+						    <h6 class="card-title" style="color:#286090;">Select a date range :</h6>
+								<form action="{{ url_for('objects_phash.objects_phashes_post') }}" id="phash_selector_form" method='post'>
+									<div class="input-group" id="date-range-from">
+										<div class="input-group-prepend"><span class="input-group-text"><i class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
+										<input class="form-control" id="date-range-from-input" placeholder="yyyy-mm-dd" value="{{ date_from }}" name="date_from" autocomplete="off">
+									</div>
+									<div class="input-group" id="date-range-to">
+										<div class="input-group-prepend"><span class="input-group-text"><i class="far fa-calendar-alt" aria-hidden="true"></i></span></div>
+										<input class="form-control" id="date-range-to-input" placeholder="yyyy-mm-dd" value="{{ date_to }}" name="date_to" autocomplete="off">
+									</div>
+									<div class="form-check my-1">
+										<input class="form-check-input" type="checkbox" id="checkbox-input-show" name="show_objects" value="True" {% if show_objects %}checked{% endif %}>
+										<label class="form-check-label" for="checkbox-input-show">
+											<span style="color:#286090; font-size: 14px;">
+												Show Phashs <i class="fas fa-image"></i>
+											</span>
+										</label>
+									</div>
+									<button class="btn btn-primary" style="text-align:center;">
+										<i class="fas fa-search"></i> Search
+									</button>
+								</form>
+						  </div>
+						</div>
+					</div>
+				</div>
+
+				{% if dict_objects %}
+                    {% if date_from|string == date_to|string %}
+                        <h3> {{ date_from }} Phashs: </h3>
+                    {% else %}
+                        <h3> {{ date_from }} to {{ date_to }} Phashs: </h3>
+                    {% endif %}
+                    <table id="tablephash" class="table table-striped table-bordered">
+                        <thead class="bg-dark text-white">
+                        <tr>
+                            <th>Phash ID</th>
+                            <th>First Seen</th>
+                            <th>Last Seen</th>
+                            <th>Total</th>
+                        </tr>
+                        </thead>
+						<tbody style="font-size: 15px;">
+                        {% for obj_id in dict_objects %}
+                            <tr>
+                                <td><a target="_blank" href="{{ url_for('correlation.show_correlation') }}?type=phash&id={{ obj_id }}">{{ obj_id[:20] }}...</a></td>
+                                <td>{{ dict_objects[obj_id].get('first_seen', 'N/A') }}</td>
+                                <td>{{ dict_objects[obj_id].get('last_seen', 'N/A') }}</td>
+                                <td>{{ dict_objects[obj_id].get('nb_seen', 0) }}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                {% else %}
+                    {% if show_objects %}
+                        {% if date_from|string == date_to|string %}
+							<h3> {{ date_from }}, No Phashs</h3>
+                        {% else %}
+							<h3> {{ date_from }} to {{ date_to }}, No Phashs</h3>
+                        {% endif %}
+                    {% endif %}
+                {% endif %}
+            </div>
+
+        </div>
+    </div>
+
+<script>
+    $(document).ready(function(){
+        $("#page-Decoded").addClass("active");
+        $("#nav_phash").addClass("active");
+
+        $('#date-range-from').dateRangePicker({
+            separator : ' to ',
+            getValue: function()
+            {
+                if ($('#date-range-from-input').val() && $('#date-range-to').val() )
+                    return $('#date-range-from-input').val() + ' to ' + $('#date-range-to').val();
+                else
+                    return '';
+            },
+            setValue: function(s,s1,s2)
+            {
+                $('#date-range-from-input').val(s1);
+                $('#date-range-to-input').val(s2);
+            },
+        });
+        $('#date-range-to').dateRangePicker({
+            separator : ' to ',
+            getValue: function()
+            {
+                if ($('#date-range-from-input').val() && $('#date-range-to').val() )
+                    return $('#date-range-from-input').val() + ' to ' + $('#date-range-to').val();
+                else
+                    return '';
+            },
+            setValue: function(s,s1,s2)
+            {
+                $('#date-range-from-input').val(s1);
+                $('#date-range-to-input').val(s2);
+            },
+        });
+
+        $('#date-range-from').data('dateRangePicker').setDateRange('{{date_from}}','{{date_to}}');
+        $('#date-range-to').data('dateRangePicker').setDateRange('{{date_from}}','{{date_to}}');
+
+        $('#tablephash').DataTable({
+            "aLengthMenu": [[5, 10, 15, -1], [5, 10, 15, "All"]],
+            "iDisplayLength": 10,
+            "order": [[ 3, "desc" ]]
+        });
+  });
+</script>
+
+</body>
+</html>
+

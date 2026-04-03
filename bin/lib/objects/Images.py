@@ -13,6 +13,11 @@ from io import BytesIO
 from flask import url_for
 from pymisp import MISPObject
 
+try:
+    from PIL.ExifTags import TAGS
+except ImportError:
+    TAGS = None
+
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
 # Import Project packages
@@ -93,7 +98,7 @@ class Image(AbstractDaterangeObject):
             filepath = self.get_filepath()
             with open(filepath, 'rb') as f:
                 file_content = f.read()
-            return file_content
+            return BytesIO(file_content)
         # io
         else:
             return self.get_file_content()
@@ -101,9 +106,9 @@ class Image(AbstractDaterangeObject):
     def get_description_models(self):
         models = []
         for key in self._get_fields_keys():
-            if key.startswith('desc:'):
-                model = key[5:]
-                models.append(model)
+            key_str = key.decode('utf-8') if isinstance(key, bytes) else key
+            if key_str.startswith('desc:'):
+                models.append(key_str[5:])
         return models
 
     def add_description_model(self, model, description):

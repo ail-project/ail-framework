@@ -170,6 +170,7 @@ app.register_blueprint(objects_pdf, url_prefix=baseUrl)
 app.register_blueprint(objects_author, url_prefix=baseUrl)
 app.register_blueprint(objects_ssh, url_prefix=baseUrl)
 app.register_blueprint(objects_ip, url_prefix=baseUrl)
+app.register_blueprint(objects_phash, url_prefix=baseUrl)
 app.register_blueprint(search_b, url_prefix=baseUrl)
 app.register_blueprint(api_rest, url_prefix=baseUrl)
 
