@@ -15,7 +15,9 @@ jobs:
   # This workflow contains a single job called "build"
   ail_test:
     # The type of runner that the job will run on
-    runs-on: ubuntu-24.04
+    # Specifying -latest as a feature: when the version bumps, if it breaks the CI,
+    # it'll be a nudge to fix what broke & add the new Ubuntu version supported
+    runs-on: ubuntu-latest
 
     # TODO: Matrix strategy for Python versions is defined but never used.
     # Currently all jobs use the same system Python, making this redundant.
