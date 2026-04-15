@@ -209,9 +209,22 @@ Instead of treating those sources separately, AIL helps turn them into searchabl
 
 ![ui_submit](./doc/screenshots/ui_submit.png?raw=true "UI importer")
 
-## Installation
+## Using AIL
 
-To install the AIL framework:
+### Requirements
+
+- Python 3.8+
+- Ubuntu 24.04
+
+[How to size the hardware requirements for AIL?](https://ail-project.org/faq.html)
+
+### Installation
+
+Two options:
+1. For a local testing, you can use the [provided devcontainer](./.devcontainer/devcontainer.json). It'll execute the steps below within a container, they take few minutes to complete.
+2. Install locally
+
+To install AIL locally
 
 ```bash
 # Clone the repository
@@ -219,40 +232,22 @@ git clone https://github.com/ail-project/ail-framework.git
 cd ail-framework
 git submodule update --init --recursive
 
-# Install dependencies on Debian/Ubuntu-based distributions
+# Install dependencies for Ubuntu
 ./installing_deps.sh
+```
 
-# Start AIL
+To start AIL:
+
+```
 cd bin
 ./LAUNCH.sh -l
 ```
 
-The default [installing_deps.sh](./installing_deps.sh) script targets Debian and Ubuntu based distributions.
+The web interface is available by default at [https://localhost:7000/](https://localhost:7000/).
 
-### Requirements
+The default credentials can be found in `./DEFAULT_PASSWORD`. That file is removed once the password for the user `admin@admin.test` is changed.
 
-- Python 3.8+
-
-[How to size the hardware requirements for AIL?](https://ail-project.org/faq.html)
-
-### Installation notes
-
-
-Some optional components require additional configuration, including the **Lacus crawler**, the **Meilisearch search indexer**, and the **translation**. See the [HOWTO](https://github.com/ail-project/ail-framework/blob/master/HOWTO.md#crawler) for detailed setup instructions.
-## Starting AIL
-
-```bash
-cd bin
-./LAUNCH.sh -l
-```
-
-The web interface is available at:
-
-```text
-https://localhost:7000/
-```
-
-The default credentials are stored in the `DEFAULT_PASSWORD` file and the file is removed once the password is changed.
+Optional components require additional configuration: the **Lacus crawler**, the **Meilisearch search indexer**, and the **translation**. See the [HOWTO](https://github.com/ail-project/ail-framework/blob/master/HOWTO.md) for detailed setup instructions.
 
 ## Documentation
 
