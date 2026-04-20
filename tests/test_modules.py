@@ -184,5 +184,33 @@ class TestModuleTelegram(unittest.TestCase):
         self.module.compute(None)
 
 
+class TestModuleImagePhash(unittest.TestCase):
+
+    def setUp(self):
+        # Import here to avoid circular dependency
+        from modules.ImagePhash import ImagePhash
+        self.module = ImagePhash()
+        self.module.debug = True
+
+    def test_module_no_image(self):
+        """Test module with non-existent image"""
+        result = self.module.compute('nonexistent_image_id', r_result=True)
+        self.assertIsNone(result)
+
+
+class TestModulePhashCorrelation(unittest.TestCase):
+
+    def setUp(self):
+        # Import here to avoid circular dependency
+        from modules.PhashCorrelation import PhashCorrelation
+        self.module = PhashCorrelation()
+        self.module.debug = True
+
+    def test_module_no_phash(self):
+        """Test module with non-existent phash"""
+        result = self.module.compute('nonexistent_phash', r_result=True)
+        self.assertIsNone(result)
+
+
 if __name__ == '__main__':
     unittest.main()
