@@ -145,6 +145,32 @@ def show_correlation():
             dict_object["metadata_card"] = ail_objects.get_object_card_meta(obj_type, subtype, obj_id, related_btc=related_btc)
             dict_object["metadata_card"]['tags_safe'] = True
 
+            # Add phash for images (retrieve from correlation engine)
+            if obj_type == 'image':
+                from lib.objects import Images
+                from lib.objects import Phashs
+                img = Images.Image(obj_id)
+                if img.exists():
+                    dict_object["metadata_card"]['image_phash'] = Phashs.get_phash_from_correlation(img)
+
+                    # Get similar images from correlations (created by PhashCorrelation module)
+                    try:
+                        correlations = img.get_correlation('image')
+                        similar_images_list = []
+                        if correlations and 'image' in correlations:
+                            for similar_str in correlations['image']:
+                                # Format: 'subtype:id' or just 'id' if no subtype
+                                if ':' in similar_str:
+                                    _, similar_id = similar_str.split(':', 1)
+                                else:
+                                    similar_id = similar_str
+                                similar_images_list.append({
+                                    'id': similar_id
+                                })
+                        dict_object["metadata_card"]['similar_images'] = similar_images_list
+                    except Exception as e:
+                        dict_object["metadata_card"]['similar_images'] = []
+
             return render_template("show_correlation.html", dict_object=dict_object, bootstrap_label=bootstrap_label,
                                    tags_selector_data=Tag.get_tags_selector_data(),
                                    meta=dict_object["metadata_card"],
