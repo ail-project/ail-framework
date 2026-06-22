@@ -46,6 +46,7 @@ from lib.objects import Messages
 from lib.objects import Ocrs
 from lib.objects import PDFs
 from lib.objects import Pgps
+from lib.objects import Phashs
 from lib.objects import QrCodes
 from lib.objects import Screenshots
 from lib.objects import SSHKeys
@@ -82,6 +83,7 @@ OBJECTS_CLASS = {
     'ocr': {'obj': Ocrs.Ocr, 'objs': Ocrs.Ocrs},
     'pdf': {'obj': PDFs.PDF, 'objs': PDFs.PDFs},
     'pgp': {'obj': Pgps.Pgp, 'objs': Pgps.Pgps},
+    'phash': {'obj': Phashs.Phash, 'objs': Phashs.Phashs},
     'qrcode': {'obj': QrCodes.Qrcode, 'objs': QrCodes.Qrcodes},
     'screenshot': {'obj': Screenshots.Screenshot, 'objs': None}, ####################################################################################################
     'ssh-key': {'obj': SSHKeys.SSHKey, 'objs': SSHKeys.SSHKeys},
