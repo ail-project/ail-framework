@@ -89,6 +89,8 @@ DiffMaxLineLength = 10000
 [Images]
 ollama_url = http://127.0.0.1:11434
 ollama_enabled = True
+# Maximum hamming distance for phash similarity (0-64, default: 8)
+phash_max_hamming_distance = 8
 
 ##### Users #####
 [Users]
