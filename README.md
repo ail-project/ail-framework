@@ -285,6 +285,12 @@ If you use or reference AIL in academic work, you can cite it as follows:
 }
 ```
 
+## Funding 🇪🇺 
+
+AIL is developed and maintained with the support of the **European Union** as part of the **HOPLITE** European Project and part of the **AIPITCH** European project.
+
+![EU logo](https://www.vulnerability-lookup.org/images/eu-funded.jpg)
+
 ## License
 
 ```text
