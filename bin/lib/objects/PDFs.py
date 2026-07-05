@@ -81,7 +81,10 @@ class PDF(AbstractDaterangeObject):
         return rel_path
 
     def get_filepath(self):
-        filename = os.path.join(PDF_FOLDER, self.get_rel_path())
+        filename = os.path.realpath(os.path.join(PDF_FOLDER, self.get_rel_path()))
+        pdf_dir = PDF_FOLDER.rstrip('/')
+        if os.path.commonpath([filename, pdf_dir]) != pdf_dir:
+            return None
         return os.path.realpath(filename)
 
     def get_file_content(self):
