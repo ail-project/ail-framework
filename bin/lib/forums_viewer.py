@@ -210,6 +210,45 @@ def api_reactivate_errored_forum_crawl_account(forum_id, account_id):
     forum.refresh_account_availability(account_id)
     return account.get_meta(), 200
 
+
+def api_purge_forum_account_current_inflight_crawl(forum_id, account_id):
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return {"status": "error", "error": "Unknown forum"}, 404
+    account = forum.get_crawl_account(account_id)
+    if not account.exists():
+        return {'status': 'error', 'error': 'unknown_account'}, 404
+    crawl_key = account.get_current_crawl_key()
+    if not crawl_key:
+        return {'status': 'error', 'error': 'missing_current_crawl'}, 400
+    inflight = forum.get_inflight_crawl_item(crawl_key)
+    if not inflight:
+        return {'status': 'error', 'error': 'current_crawl_not_inflight', 'crawl_key': crawl_key}, 400
+    forum.purge_account_current_inflight_crawl(account, crawl_key)
+    return account_id, 200
+
+def api_resend_forum_account_current_inflight_crawl(forum_id, account_id):
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return {"status": "error", "error": "Unknown forum"}, 404
+    account = forum.get_crawl_account(account_id)
+    if not account.exists():
+        return {'status': 'error', 'error': 'unknown_account'}, 404
+    crawl_key = account.get_current_crawl_key()
+    if not crawl_key:
+        return {'status': 'error', 'error': 'missing_current_crawl'}, 400
+    item = forum.get_crawl_item(crawl_key)
+    if not item:
+        return {'status': 'error', 'error': 'missing crawl_key', 'crawl_key': crawl_key}, 400
+    inflight = forum.get_inflight_crawl_item(crawl_key)
+    if not inflight:
+        return {'status': 'error', 'error': 'current_crawl_not_inflight', 'crawl_key': crawl_key}, 400
+    valid, reason = forum.validate_crawl_item(item)
+    if not valid:
+        return False, {'status': 'error', 'error': reason, 'crawl_key': crawl_key}
+    forum.resend_account_current_inflight_crawl(account, crawl_key)
+    return account_id, 200
+
 def api_set_forum_account_local_storage(user_org, user_id, data):
     if not isinstance(data, dict):
         return {'status': 'error', 'error': 'Invalid JSON body'}, 400

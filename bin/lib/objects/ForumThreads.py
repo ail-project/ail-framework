@@ -26,8 +26,8 @@ class ForumThread(AbstractSubtypeObject):
     def get_forum_type(self):
         return self.subtype
 
-    def get_forum_id(self): # TODO
-        pass
+    def get_forum_id(self):
+        return self.subtype
 
     def get_name(self):
         return self._get_field('name')
@@ -263,6 +263,18 @@ class ForumThread(AbstractSubtypeObject):
 
     def get_misp_object(self):
         pass
+
+    def get_search_document(self):
+        global_id = self.get_global_id()
+        content = self.get_name()
+        # info = self.get_info()
+        if content:
+            first = self.get_first_seen_timestamp()
+            last = self.get_last_seen_timestamp()
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content,
+                    'fid': self.get_forum_id(), 'type': self.type,
+                    'first': int(first), 'last': int(last)}
+        return None
 
     def get_meta(self, options=set(), flask_context=False):
         meta = self._get_meta(options=options, flask_context=flask_context)

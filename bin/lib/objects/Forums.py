@@ -794,6 +794,25 @@ class Forum(AbstractDaterangeObject):
         r_object.delete(f'forum:crawl:thread:account:{self.id}')
         return deleted
 
+    def purge_account_current_inflight_crawl(self, account, crawl_key):
+        self.fail_crawl_item(crawl_key, error='manual_purge')
+        r_crawler.zrem('forum:crawl:running', f'{self.id}:{account.id}')
+        account.reset_crawl()
+        self.refresh_account_availability(account.id)
+        return account
+
+    def resend_account_current_inflight_crawl(self, account, crawl_key):
+        if not crawl_key:
+            crawl_key = account.get_current_crawl_key()
+        score = 100
+        r_object.hdel(f'forum:crawl:inflight:{self.id}', crawl_key)
+        r_object.zadd(f'forum:crawl:queue:{self.id}', {crawl_key: score})
+        r_object.sadd(f'forum:crawl:queued:{self.id}', crawl_key)
+        r_crawler.zrem('forum:crawl:running', f'{self.id}:{account.id}')
+        account.reset_crawl()
+        self.refresh_account_availability(account.id)
+        return account
+
     def get_crawl_accounts_status(self):
         accounts = []
         available_accounts = set(self.get_available_accounts())

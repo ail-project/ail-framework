@@ -115,7 +115,7 @@
 
 <div class="forum-board mb-4"><div class="forum-board-header">Accounts</div>
 {% if meta['accounts'] %}
-  <div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>edit</th><th>status</th><th>availability</th><th>runtime</th><th>delete</th></tr></thead><tbody>
+  <div class="table-responsive"><table class="table table-sm table-striped mb-0"><thead><tr><th>edit</th><th>status</th><th>availability</th><th>runtime</th><th>inflight actions</th><th>delete</th></tr></thead><tbody>
   {% for account in meta['accounts'] %}
     <tr>
       <td style="min-width:720px">
@@ -148,6 +148,22 @@
       </td>
       <td>available: {{ account.get('available') }}<br>reason: {{ account.get('availability_reason') }}</td>
       <td class="text-break">task: {{ account.get('current_task_uuid') }}<br>crawl: {{ account.get('current_crawl_key') }}<br>url: {{ account.get('current_url') }}<br>referer: {{ account.get('current_referer') }}<br>last_used_at: {{ account.get('last_used_at') }}<br>last_crawled_at: {{ account.get('last_crawled_at') }}<br>active_time: {{ account.get('active_time') }}</td>
+      <td>
+        {% if account.get('current_crawl_key') %}
+          <form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_account_inflight_resend') }}" class="mb-2">
+            <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+            <input type="hidden" name="account_id" value="{{ account['id'] }}">
+            <button class="btn btn-sm btn-warning" onclick="return confirm('Resend current inflight crawl for account {{ account['id'] }} ?')"><i class="fas fa-arrow-up"></i> Resend</button>
+          </form>
+          <form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_account_inflight_purge') }}">
+            <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+            <input type="hidden" name="account_id" value="{{ account['id'] }}">
+            <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Purge current inflight crawl for account {{ account['id'] }}?')"><i class="fas fa-ban"></i> Purge inflight</button>
+          </form>
+        {% else %}
+          <span class="text-muted">No current inflight crawl</span>
+        {% endif %}
+      </td>
       <td><form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_account_delete') }}"><input type="hidden" name="forum_id" value="{{ forum['id'] }}"><input type="hidden" name="account_id" value="{{ account['id'] }}"><button class="btn btn-sm btn-danger" onclick="return confirm('Delete account {{ account['id'] }}?')"><i class="fas fa-trash"></i></button></form></td>
     </tr>
   {% endfor %}

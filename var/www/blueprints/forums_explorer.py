@@ -165,6 +165,34 @@ def forum_explorer_crawler_account_reactivate():
     success = f"Account {account_id} status updated to waiting and sent back to the forum crawler queue"
     return redirect(url_for(target, id=forum_id, success=success))
 
+
+@forums_explorer.route("/chats/explorer/forums/crawler/account/inflight/purge", methods=['POST'])
+@login_required
+@login_admin
+def forum_explorer_crawler_account_inflight_purge():
+    forum_id = request.form.get('forum_id')
+    account_id = request.form.get('account_id')
+    res = forums_viewer.api_purge_forum_account_current_inflight_crawl(forum_id, account_id)
+    if res[1] != 200:
+        error = res[0].get('error')
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, error=error))
+    success = f"Purged current inflight crawl for account {account_id}"
+    return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, success=success))
+
+
+@forums_explorer.route("/chats/explorer/forums/crawler/account/inflight/resend", methods=['POST'])
+@login_required
+@login_admin
+def forum_explorer_crawler_account_inflight_resend():
+    forum_id = request.form.get('forum_id')
+    account_id = request.form.get('account_id')
+    res = forums_viewer.api_resend_forum_account_current_inflight_crawl(forum_id, account_id)
+    if res[1] != 200:
+        error = res[0].get('error')
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, error=error))
+    success = f"Resent current inflight crawl for account {account_id}"
+    return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, success=success))
+
 @forums_explorer.route("/chats/explorer/forums/crawler/account/delete", methods=['POST'])
 @login_required
 @login_admin

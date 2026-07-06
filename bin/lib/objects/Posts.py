@@ -65,6 +65,12 @@ class Post(AbstractObject):
             return thread
         return None
 
+    def get_thread_sub_id(self):
+        thread = self.get_correlation('forum-thread')
+        if thread.get('forum-thread'):
+            return thread["forum-thread"].pop()
+        return None
+
     def get_date(self):
         timestamp = self.get_timestamp()
         if timestamp:
@@ -147,6 +153,14 @@ class Post(AbstractObject):
     #   - URLs
     #   - Images
     #   - Attachments
+    def get_search_document(self):
+        content = self.get_content()
+        if content:
+            global_id = self.get_global_id()
+            return {'uuid': self.get_uuid5(global_id), 'id': global_id, 'content': content,
+                    'fid': self.get_forum_id(), 'type': self.type, 'last': int(self.get_timestamp())}
+        return None
+
     def get_meta(self, options=set(), timestamp=None, translation_target=None, flask_context=False):
         meta = self.get_default_meta(options=options)
         meta['tags'] = self.get_tags(r_list=True)

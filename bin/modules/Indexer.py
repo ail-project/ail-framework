@@ -23,6 +23,7 @@ from modules.abstract_module import AbstractModule
 # from lib.ConfigLoader import ConfigLoader
 from lib.exceptions import MeilisearchError
 from lib import search_engine
+from lib.objects import ForumThreads
 
 
 class Indexer(AbstractModule):
@@ -72,6 +73,15 @@ class Indexer(AbstractModule):
 
                 elif self.obj.type == 'title':
                     search_engine.index_title(self.obj)
+
+                elif self.obj.type == 'post':
+                    search_engine.index_forum_post(self.obj)
+                    thread_id = self.obj.get_thread_sub_id()
+                    # TODO CACHE
+                    if thread_id:
+                        subtype, thread_id = thread_id.split(':', 1)
+                        search_engine.index_forum_thread(ForumThreads.ForumThread(thread_id, subtype))
+
             except MeilisearchError:
                 self.is_up = False
                 print('meilisearch down, sending message back to queue')
