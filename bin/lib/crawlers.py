@@ -2223,6 +2223,39 @@ def get_nb_running_forum_crawler_accounts():
     return r_crawler.zcard('forum:crawl:running')
 
 
+def get_forum_crawler_max_accounts():
+    nb_accounts = r_cache.hget('crawler:lacus', 'forum_nb_accounts')
+    if not nb_accounts:
+        nb_accounts = r_db.hget('crawler:lacus', 'forum_nb_accounts')
+        if not nb_accounts:
+            nb_accounts = 0
+            save_forum_crawler_max_accounts(nb_accounts)
+        else:
+            r_cache.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+    return int(nb_accounts)
+
+
+def save_forum_crawler_max_accounts(nb_accounts):
+    r_db.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+    r_cache.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+
+
+def api_set_forum_crawler_max_accounts(data):
+    nb_accounts = data.get('nb', 0)
+    try:
+        nb_accounts = int(nb_accounts)
+        if nb_accounts < 0:
+            nb_accounts = 0
+    except (TypeError, ValueError):
+        return {'error': 'Invalid number of forum account crawler tasks to launch'}, 400
+    save_forum_crawler_max_accounts(nb_accounts)
+    return nb_accounts, 200
+
+
+def can_launch_forum_crawler_account():
+    return get_nb_running_forum_crawler_accounts() < get_forum_crawler_max_accounts()
+
+
 #### CRAWLER CAPTURE ####
 
 def get_nb_crawler_captures():

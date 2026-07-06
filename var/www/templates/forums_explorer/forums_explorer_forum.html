@@ -33,7 +33,10 @@
       </nav>
 
       <div class="forum-title-card p-4 mb-4">
-        <h1 class="mb-2"><i class="fas fa-comments"></i> {{ forum.get('name') or forum['id'] }}</h1>
+        <h1 class="mb-2"><svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                   <path d="M0 0h24v24H0z" fill="none" />
+                   <path fill="currentColor" d="M17 12V3a1 1 0 0 0-1-1H3a1 1 0 0 0-1 1v14l4-4h10a1 1 0 0 0 1-1m4-6h-2v9H6v2a1 1 0 0 0 1 1h11l4 4V7a1 1 0 0 0-1-1" />
+                 </svg> {{ forum.get('name') or forum['id'] }}</h1>
         <div>
           <span class="mr-3"><i class="fas fa-fingerprint"></i> {{ forum['id'] }}</span>
           <span class="mr-3"><i class="fas fa-layer-group"></i> {{ forum.get('forum_type') or forum.get('subtype') or '' }}</span>

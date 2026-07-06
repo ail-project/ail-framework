@@ -1099,6 +1099,7 @@ def crawler_settings():
     lacus_url = crawlers.get_lacus_url()
     api_key = crawlers.get_hidden_lacus_api_key()
     nb_captures = crawlers.get_crawler_max_captures()
+    nb_forum_accounts = crawlers.get_forum_crawler_max_accounts()
 
     is_manager_connected = crawlers.get_lacus_connection_metadata(force_ping=True)
     is_crawler_working = crawlers.is_test_ail_crawlers_successful()
@@ -1118,6 +1119,7 @@ def crawler_settings():
                            is_manager_connected=is_manager_connected,
                            lacus_url=lacus_url, api_key=api_key,
                            nb_captures=nb_captures,
+                           nb_forum_accounts=nb_forum_accounts,
                            # all_proxies=all_proxies,
                            is_crawler_working=is_crawler_working,
                            crawler_test_metadata=crawler_test_metadata,
@@ -1153,15 +1155,21 @@ def crawler_lacus_settings_crawler_manager():
 def crawler_settings_crawlers_to_launch():
     if request.method == 'POST':
         nb_captures = request.form.get('nb_captures')
+        nb_forum_accounts = request.form.get('nb_forum_accounts')
         res = crawlers.api_set_crawler_max_captures({'nb': nb_captures})
+        if res[1] != 200:
+            return create_json_response(res[0], res[1])
+        res = crawlers.api_set_forum_crawler_max_accounts({'nb': nb_forum_accounts})
         if res[1] != 200:
             return create_json_response(res[0], res[1])
         else:
             return redirect(url_for('crawler_splash.crawler_settings'))
     else:
         nb_captures = crawlers.get_crawler_max_captures()
+        nb_forum_accounts = crawlers.get_forum_crawler_max_accounts()
         return render_template("settings_edit_crawlers_to_launch.html",
-                               nb_captures=nb_captures)
+                               nb_captures=nb_captures,
+                               nb_forum_accounts=nb_forum_accounts)
 
 
 @crawler_splash.route('/crawler/settings/crawler/test', methods=['GET'])
