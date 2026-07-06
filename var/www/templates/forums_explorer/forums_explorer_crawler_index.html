@@ -16,6 +16,8 @@
     .forum-row:hover { background: #f6f9fb; text-decoration: none; color: inherit; }
     .forum-icon { width: 48px; height: 48px; border-radius: 50%; background: #d9edf7; color: #2f6f8f; display: flex; align-items: center; justify-content: center; font-size: 1.35rem; margin-right: 1rem; flex: 0 0 48px; }
     .forum-stats { min-width: 440px; text-align: right; color: #6c757d; }
+    .table-status-wrapper { overflow-x: auto; }
+    .text-break { word-break: break-word; }
   </style>
 </head>
 <body>
@@ -34,6 +36,46 @@
       <div class="forum-hero my-3 p-4">
         <h1 class="mb-1"><i class="fas fa-spider"></i> Forum crawler status</h1>
         <p class="mb-0">Read-only status for configured Forum crawlers.</p>
+      </div>
+
+
+      <h5 class="mt-3 mb-2"><i class="fas fa-running"></i> Currently crawling forum accounts</h5>
+      <div class="forum-board mb-4">
+        {% set has_running = namespace(value=false) %}
+        <div class="table-status-wrapper">
+          <table class="table table-sm table-hover mb-0">
+            <thead>
+              <tr>
+                <th>Forum</th>
+                <th>Account</th>
+                <th>Launch time</th>
+                <th>Status</th>
+                <th>Task UUID</th>
+                <th>Current URL</th>
+                <th>Stale</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for forum in forums %}
+                {% for account in forum['crawler_status'].get('running', []) %}
+                  {% set has_running.value = true %}
+                  <tr>
+                    <td><a href="{{ url_for('forums_explorer.forum_explorer_crawler_status') }}?id={{ forum['id'] }}">{{ forum.get('name') or forum['id'] }}</a></td>
+                    <td>{{ account.get('account_id') }}</td>
+                    <td>{{ account.get('launch_time') }}</td>
+                    <td><span class="badge badge-success">{{ account.get('status') }}</span></td>
+                    <td class="text-break">{{ account.get('current_task_uuid') }}</td>
+                    <td class="text-break">{{ account.get('current_url') }}</td>
+                    <td>{% if account.get('stale') %}<span class="badge badge-warning">stale</span> {{ account.get('stale_reasons')|join(', ') }}{% else %}<span class="text-success">False</span>{% endif %}</td>
+                  </tr>
+                {% endfor %}
+              {% endfor %}
+              {% if not has_running.value %}
+                <tr><td colspan="7" class="text-muted text-center py-3">No forum accounts are currently crawling.</td></tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {% if forums %}

@@ -35,7 +35,7 @@ def create_json_response(data, status_code):
 
 # ============= ROUTES ==============
 
-@forums_explorer.route("/chats/explorer/forums", methods=['GET'])
+@forums_explorer.route("/forums/explorer", methods=['GET'])
 @login_required
 @login_read_only
 def forum_explorer_forums():
@@ -48,10 +48,10 @@ def forum_explorer_forums():
         return render_template('forums_explorer_forum.html', meta=meta[0], bootstrap_label=bootstrap_label)
 
     forums = forums_viewer.get_forums()
-    return render_template('forums_explorer_index.html', forums=forums, bootstrap_label=bootstrap_label, is_admin=current_user.is_in_role('admin'))
+    return render_template('forums_explorer_index.html', forums=forums, bootstrap_label=bootstrap_label, is_admin=current_user.is_admin())
 
 
-@forums_explorer.route("/chats/explorer/forums/create", methods=['POST'])
+@forums_explorer.route("/forums/explorer/create", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_forum_create():
@@ -61,7 +61,7 @@ def forum_explorer_forum_create():
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=res[0]['id']))
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler", methods=['GET'])
+@forums_explorer.route("/forums/explorer/crawler", methods=['GET'])
 @login_required
 @login_admin
 def forum_explorer_crawler_status():
@@ -76,7 +76,7 @@ def forum_explorer_crawler_status():
     return render_template('forums_explorer_crawler_index.html', forums=forums, bootstrap_label=bootstrap_label)
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/queue", methods=['GET'])
+@forums_explorer.route("/forums/explorer/crawler/queue", methods=['GET'])
 @login_required
 @login_admin
 def forum_explorer_crawler_queue():
@@ -89,7 +89,7 @@ def forum_explorer_crawler_queue():
 
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/queue/enqueue", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/queue/enqueue", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_queue_enqueue():
@@ -101,7 +101,7 @@ def forum_explorer_crawler_queue_enqueue():
     success = f"Queued Forum URL for crawl: {res[0].get('url')}"
     return redirect(url_for('forums_explorer.forum_explorer_crawler_queue', id=forum_id, success=success))
 
-@forums_explorer.route("/chats/explorer/forums/crawler/queue/purge", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/queue/purge", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_queue_purge():
@@ -115,7 +115,7 @@ def forum_explorer_crawler_queue_purge():
     return redirect(url_for('forums_explorer.forum_explorer_crawler_queue', id=forum_id, success=success))
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/manage", methods=['GET'])
+@forums_explorer.route("/forums/explorer/crawler/manage", methods=['GET'])
 @login_required
 @login_admin
 def forum_explorer_crawler_manage():
@@ -126,7 +126,7 @@ def forum_explorer_crawler_manage():
     return render_template('forums_explorer_crawler_manage.html', meta=meta[0], bootstrap_label=bootstrap_label)
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/config/edit", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/config/edit", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_config_edit():
@@ -137,7 +137,7 @@ def forum_explorer_crawler_config_edit():
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id))
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/account/save", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/account/save", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_account_save():
@@ -150,7 +150,7 @@ def forum_explorer_crawler_account_save():
 
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/account/reactivate", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/account/reactivate", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_account_reactivate():
@@ -166,7 +166,7 @@ def forum_explorer_crawler_account_reactivate():
     return redirect(url_for(target, id=forum_id, success=success))
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/account/inflight/purge", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/account/inflight/purge", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_account_inflight_purge():
@@ -180,7 +180,7 @@ def forum_explorer_crawler_account_inflight_purge():
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, success=success))
 
 
-@forums_explorer.route("/chats/explorer/forums/crawler/account/inflight/resend", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/account/inflight/resend", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_account_inflight_resend():
@@ -193,7 +193,7 @@ def forum_explorer_crawler_account_inflight_resend():
     success = f"Resent current inflight crawl for account {account_id}"
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, success=success))
 
-@forums_explorer.route("/chats/explorer/forums/crawler/account/delete", methods=['POST'])
+@forums_explorer.route("/forums/explorer/crawler/account/delete", methods=['POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_account_delete():
@@ -262,7 +262,7 @@ def forum_explorer_subforum():
     return render_template('forums_explorer_subforum.html', meta=meta[0], bootstrap_label=bootstrap_label)
 
 
-@forums_explorer.route("/chats/explorer/forums/thread", methods=['GET'])
+@forums_explorer.route("/forums/explorer/thread", methods=['GET'])
 @login_required
 @login_read_only
 def forum_explorer_thread():
