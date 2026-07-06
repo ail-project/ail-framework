@@ -669,9 +669,9 @@ def api_search(data):
             return {"status": "error", "reason": "Invalid date from"}, 400
     if timestamp_to:
         try:
-            timestamp_to = Date.convert_str_date_to_epoch(timestamp_to)
+            timestamp_to = Date.convert_str_date_to_epoch_end(timestamp_to)
         except:
-            return {"status": "error", "reason": "Invalid date from"}, 400
+            return {"status": "error", "reason": "Invalid date to"}, 400
 
     try:
         result = Engine.search(indexes, to_search, page=page, nb=nb_per_page, timestamp_from=timestamp_from, sort=sort,

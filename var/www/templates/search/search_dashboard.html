@@ -400,12 +400,12 @@
 
         </div>
 
-        <div class="collapse mt-2 {% if request.args.get('from') or request.args.get('to') or selected_forums %}show{% endif %}" id="moreFilters">
+        <div class="collapse mt-2 {% if request.args.get('from') or request.args.get('to') %}show{% endif %}" id="moreFilters">
           <div class="card card-body">
 
             <div class="form-row align-items-end">
               <div class="col-md-4">
-                <label class="small text-muted mb-1" for="last_seen_from">Last seen (from)</label>
+                <label class="small text-muted mb-1" for="last_seen_from">First seen (from)</label>
                 <input type="date" class="form-control"
                        id="last_seen_from"
                        name="from"
