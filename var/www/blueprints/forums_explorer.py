@@ -250,7 +250,7 @@ def objects_post_detect_language():
         return redirect(request.referrer)
     return redirect(url_for('forums_explorer.forum_explorer_forums'))
 
-@forums_explorer.route("/chats/explorer/forum/subforum", methods=['GET'])
+@forums_explorer.route("/forums/explorer/subforum", methods=['GET'])
 @login_required
 @login_read_only
 def forum_explorer_subforum():

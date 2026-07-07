@@ -114,6 +114,10 @@ def get_current_utc_full_time():
     timestamp = datetime.datetime.now(datetime.timezone.utc)
     return timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
+def get_utc_datetime_from_timestamp(timestamp):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    return timestamp.strftime('%Y-%m-%d %H:%M:%S')
+
 def get_date_from_timestamp(timestamp):
     return datetime.datetime.fromtimestamp(timestamp).strftime('%Y%m%d')
 

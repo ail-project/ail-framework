@@ -22,6 +22,7 @@ from lib.objects import UsersAccount
 from lib.objects import ail_objects
 from lib import crawlers
 from lib import Language
+from packages import Date
 from lib.crawlers import Cookiejar
 
 # config_loader = ConfigLoader()
@@ -299,8 +300,41 @@ def _children_meta(parent, child_type):
             children.append(_subforum_meta(obj))
         elif obj_type == 'forum-thread':
             children.append(_thread_meta(obj))
-    # TODO CHANGE SORT
     return sorted(children, key=lambda m: ((m.get('name') or m.get('title') or m.get('id')).lower(), m.get('id')))
+
+
+def _subforum_threads_meta(subforum):
+    threads = []
+    thread_ids = set()
+
+    for thread_id, last_post_timestamp in subforum.get_threads_by_last_post():
+        thread = ForumThreads.ForumThread(thread_id, subforum.subtype)
+        if not thread.exists():
+            continue
+        meta = _thread_meta(thread)
+        meta['last_post_timestamp'] = int(last_post_timestamp)
+        meta['last_post_date'] = Date.get_utc_datetime_from_timestamp(last_post_timestamp)
+        threads.append(meta)
+        thread_ids.add(thread_id)
+
+    # Threads without posts are not present in the last-post zset. Keep them visible
+    # after active threads, using the same stable alphabetical ordering as before.
+    inactive_threads = []
+    for thread_id in subforum.get_threads():
+        if thread_id in thread_ids:
+            continue
+        thread = ForumThreads.ForumThread(thread_id, subforum.subtype)
+        if not thread.exists():
+            continue
+        meta = _thread_meta(thread)
+        meta['last_post_timestamp'] = 0
+        meta['last_post_date'] = None
+        inactive_threads.append(meta)
+
+    return threads + sorted(
+        inactive_threads,
+        key=lambda m: ((m.get('name') or m.get('title') or m.get('id')).lower(), m.get('id')),
+    )
 
 
 def get_forums():
@@ -456,7 +490,7 @@ def api_get_subforum(subtype, subforum_id):
         'subforum': _subforum_meta(subforum),
         'breadcrumb': get_breadcrumb_for_object(subforum),
         'subforums': _children_meta(subforum, 'subforum'),
-        'threads': _children_meta(subforum, 'forum-thread'),
+        'threads': _subforum_threads_meta(subforum),
     }, 200
 
 def api_get_forum_thread(subtype, thread_id, page=1, nb=50, translation_target=None):

@@ -75,7 +75,11 @@
               </div>
               <div class="forum-stats">
                 <div><strong>{{ thread.get('nb_posts') or 0 }}</strong> posts</div>
-                <div class="small">{{ thread.get('last_seen') or '' }}</div>
+                <div class="small">
+                  {% if thread.get('last_post_date') %}
+                    Last: {{ thread['last_post_date'] }} UTC
+                  {% endif %}
+                </div>
               </div>
             </a>
           {% endfor %}
