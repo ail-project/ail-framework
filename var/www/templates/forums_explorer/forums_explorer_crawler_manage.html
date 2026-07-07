@@ -14,6 +14,7 @@
     .text-break { word-break: break-word; }
     .active-time-row { border-bottom: 1px solid #edf1f3; padding: .35rem 0; }
     .active-time-row:last-child { border-bottom: 0; }
+    .forum-banner-preview { width: 100%; max-height: 180px; object-fit: cover; border-radius: .25rem; border: 1px solid #d7dee2; }
   </style>
 </head>
 <body>
@@ -75,6 +76,39 @@
 <h1 class="mb-3"><i class="fas fa-cogs"></i> Forum crawler management</h1>
 {% if request.args.get('success') %}<div class="alert alert-success">{{ request.args.get('success') }}</div>{% endif %}
 {% if request.args.get('error') %}<div class="alert alert-danger">{{ request.args.get('error') }}</div>{% endif %}
+
+<div class="forum-board mb-4"><div class="forum-board-header">Forum banner</div><div class="p-3">
+  <div class="row align-items-center">
+    <div class="col-md-5 mb-3 mb-md-0">
+      {% if forum.get('banner') %}
+        <img class="forum-banner-preview" src="{{ url_for('objects_image.image', filename=forum['banner']) }}" alt="{{ forum.get('name') or forum['id'] }} banner">
+      {% else %}
+        <div class="alert alert-secondary mb-0"><i class="fas fa-image"></i> No banner configured for this forum.</div>
+      {% endif %}
+    </div>
+    <div class="col-md-7">
+      <form method="post" action="{{ url_for('forums_explorer.forum_explorer_banner_edit') }}" enctype="multipart/form-data">
+        <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+        <input type="hidden" name="next" value="manage">
+        <div class="form-group">
+          <label>{% if forum.get('banner') %}Replace banner{% else %}Add banner{% endif %}</label>
+          <input class="form-control-file" type="file" name="banner" accept="image/*" required>
+          <small class="form-text text-muted">The banner is visible to all users on this forum page.</small>
+        </div>
+        <button class="btn btn-primary"><i class="fas fa-upload"></i> {% if forum.get('banner') %}Replace banner{% else %}Add banner{% endif %}</button>
+      </form>
+      {% if forum.get('banner') %}
+      <form method="post" action="{{ url_for('forums_explorer.forum_explorer_banner_edit') }}" class="mt-2">
+        <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+        <input type="hidden" name="next" value="manage">
+        <input type="hidden" name="action" value="delete">
+        <button class="btn btn-outline-danger" onclick="return confirm('Remove banner for {{ forum.get('name') or forum['id'] }}?')"><i class="fas fa-trash"></i> Remove banner</button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div></div>
+
 <div class="forum-board mb-4"><div class="forum-board-header">Crawl config</div><div class="p-3">
 <form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_config_edit') }}">
   <input type="hidden" name="forum_id" value="{{ forum['id'] }}">

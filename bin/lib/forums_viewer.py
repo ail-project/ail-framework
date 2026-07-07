@@ -7,6 +7,7 @@ Forums Viewer
 """
 import os
 import sys
+import magic
 
 sys.path.append(os.environ['AIL_BIN'])
 ##################################
@@ -19,6 +20,7 @@ from lib.objects import Subforums
 from lib.objects import ForumThreads
 from lib.objects import Posts
 from lib.objects import UsersAccount
+from lib.objects import Images
 from lib.objects import ail_objects
 from lib import crawlers
 from lib import Language
@@ -28,7 +30,7 @@ from lib.crawlers import Cookiejar
 # config_loader = ConfigLoader()
 # config_loader = None
 
-_FORUM_OPTIONS = {'forum_type', 'info', 'name', 'url', 'nb_subforums', 'nb_orphan_subforums'}
+_FORUM_OPTIONS = {'forum_type', 'info', 'name', 'url', 'banner', 'nb_subforums', 'nb_orphan_subforums'}
 _SUBFORUM_OPTIONS = {'info', 'url', 'nb_subforums', 'nb_threads'}
 _THREAD_OPTIONS = {'name', 'info', 'url', 'flags', 'nb_posts'}
 _POST_OPTIONS = {'content', 'language', 'link', 'reactions', 'state', 'timestamp', 'translation', 'user-account'}
@@ -107,6 +109,32 @@ def create_forum(data):
     if forum.exists():
         return {"status": "error", "error": "Forum already exists", "forum_id": forum_id}, 409
     forum.create(forum_type, name=name, url=url, info=info)
+    return forum.get_meta(_FORUM_OPTIONS, flask_context=True), 200
+
+
+def update_forum_banner(forum_id, banner_file):
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return {"status": "error", "error": "Unknown forum"}, 404
+    if not banner_file or not banner_file.filename:
+        return {"status": "error", "error": "Missing banner image"}, 400
+    content = banner_file.read()
+    if not content:
+        return {"status": "error", "error": "Empty banner image"}, 400
+    mime = magic.from_buffer(content, mime=True)
+    if not mime or not mime.startswith('image/'):
+        return {"status": "error", "error": "Banner must be an image"}, 400
+    image = Images.create(content, size_limit=5000000)
+    if not image:
+        return {"status": "error", "error": "Banner image is too large"}, 400
+    forum.set_banner(image.id)
+    return forum.get_meta(_FORUM_OPTIONS, flask_context=True), 200
+
+def delete_forum_banner(forum_id):
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return {"status": "error", "error": "Unknown forum"}, 404
+    forum.delete_banner()
     return forum.get_meta(_FORUM_OPTIONS, flask_context=True), 200
 
 def get_forum_crawl_management(forum_id):

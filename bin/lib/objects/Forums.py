@@ -356,6 +356,15 @@ class Forum(AbstractDaterangeObject):
     def set_url(self, url):
         self._set_field('url', url)
 
+    def get_banner(self):
+        return self._get_field('banner')
+
+    def set_banner(self, image_id):
+        self._set_field('banner', image_id)
+
+    def delete_banner(self):
+        r_object.hdel(f'meta:{self.type}:{self.id}', 'banner')
+
     def get_subforums(self):
         subforums = []
         for child in self.get_childrens():
@@ -913,6 +922,8 @@ class Forum(AbstractDaterangeObject):
             meta['info'] = self._get_field('info')
         if 'url' in options:
             meta['url'] = self._get_field('url')
+        if 'banner' in options:
+            meta['banner'] = self.get_banner()
         if 'subforums' in options:
             meta['subforums'] = self.get_subforums()
         if 'nb_subforums' in options:

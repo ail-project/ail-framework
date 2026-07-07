@@ -45,7 +45,7 @@ def forum_explorer_forums():
         if meta[1] != 200:
             return create_json_response(meta[0], meta[1])
         # TODO CREATE OTHER TEMPLATE with NEW ENDPOINT
-        return render_template('forums_explorer_forum.html', meta=meta[0], bootstrap_label=bootstrap_label)
+        return render_template('forums_explorer_forum.html', meta=meta[0], bootstrap_label=bootstrap_label, is_admin=current_user.is_admin())
 
     forums = forums_viewer.get_forums()
     return render_template('forums_explorer_index.html', forums=forums, bootstrap_label=bootstrap_label, is_admin=current_user.is_admin())
@@ -59,6 +59,22 @@ def forum_explorer_forum_create():
     if res[1] != 200:
         return create_json_response(res[0], res[1])
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=res[0]['id']))
+
+
+
+@forums_explorer.route("/forums/explorer/banner/edit", methods=['POST'])
+@login_required
+@login_admin
+def forum_explorer_banner_edit():
+    forum_id = request.form.get('forum_id')
+    action = request.form.get('action')
+    if action == 'delete':
+        res = forums_viewer.delete_forum_banner(forum_id)
+    else:
+        res = forums_viewer.update_forum_banner(forum_id, request.files.get('banner'))
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id))
 
 
 @forums_explorer.route("/forums/explorer/crawler", methods=['GET'])
