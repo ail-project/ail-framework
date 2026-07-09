@@ -39,6 +39,45 @@ correlation = Blueprint('correlation', __name__,
 
 # ============ FUNCTIONS ============
 
+
+def get_correlation_filter_objects():
+    labels = {
+        'barcode': 'Barcode',
+        'chat-subchannel': 'Chat-Subchannel',
+        'chat-thread': 'Chat-Thread',
+        'cookie-name': 'Cookie Name',
+        'cve': 'CVE',
+        'cryptocurrency': 'Cryptocurrency',
+        'decoded': 'Decoded',
+        'dom-hash': 'DomHash',
+        'etag': 'Etag',
+        'favicon': 'Favicon',
+        'file-name': 'File Name',
+        'forum': 'Forum',
+        'forum-thread': 'Forum Thread',
+        'gtracker': 'G tracking',
+        'hhhash': 'HHHash',
+        'image': 'Image',
+        'ip': 'IP',
+        'item': 'Item',
+        'mail': 'Mail',
+        'message': 'Message',
+        'ocr': 'OCR',
+        'pdf': 'PDF',
+        'pgp': 'PGP',
+        'post': 'Post',
+        'qrcode': 'Qrcode',
+        'screenshot': 'Screenshot',
+        'ssh-key': 'SSH Key',
+        'subforum': 'Subforum',
+        'title': 'Title',
+        'user-account': 'User-Account',
+    }
+    return [
+        {'type': obj_type, 'label': labels.get(obj_type, obj_type.replace('-', ' ').title())}
+        for obj_type in sorted(ail_objects.get_all_objects())
+    ]
+
 def sanitise_graph_mode(graph_mode):
     if graph_mode not in ('inter', 'union'):
         return 'union'
@@ -135,7 +174,8 @@ def show_correlation():
                            "correlation_id": obj_id,
                            "metadata": ail_objects.get_object_meta(obj_type, subtype, obj_id,
                                                                    options={'tags', 'description'}, flask_context=True),
-                           "nb_correl": ail_objects.get_obj_nb_correlations(obj_type, subtype, obj_id)
+                           "nb_correl": ail_objects.get_obj_nb_correlations(obj_type, subtype, obj_id),
+                           "correlation_filter_objects": get_correlation_filter_objects()
                            }
             if subtype:
                 dict_object["subtype"] = subtype
