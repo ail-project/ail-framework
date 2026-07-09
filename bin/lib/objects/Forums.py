@@ -732,6 +732,12 @@ class Forum(AbstractDaterangeObject):
     def complete_crawl_item(self, crawl_key):
         return self._cleanup_crawl_item(crawl_key)
 
+    def remove_pending_crawl_item(self, crawl_key):
+        if not r_object.zrem(f'forum:crawl:queue:{self.id}', crawl_key):
+            return False
+        self._cleanup_crawl_item(crawl_key)
+        return True
+
     def fail_crawl_item(self, crawl_key, error=None):
         item = self.get_crawl_item(crawl_key)
         if item and item.get('type') == 'forum-thread':

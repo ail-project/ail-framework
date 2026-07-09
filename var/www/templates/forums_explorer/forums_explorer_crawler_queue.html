@@ -59,7 +59,7 @@
   <div class="forum-board-header">Pending crawl items</div>
   {% if queue.get('pending_sample') %}
     <div class="table-responsive"><table class="table table-sm table-striped mb-0">
-      <thead><tr><th>crawl_key</th><th>score</th><th>type</th><th>id</th><th>page</th><th>url</th><th>referer</th><th>crawl_mode</th><th>parent</th></tr></thead>
+      <thead><tr><th>crawl_key</th><th>score</th><th>type</th><th>id</th><th>page</th><th>url</th><th>referer</th><th>crawl_mode</th><th>parent</th><th>actions</th></tr></thead>
       <tbody>{% for pending in queue.get('pending_sample') %}{% set item = pending.get('item') or {} %}
         <tr>
           <td class="text-break">{{ pending.get('crawl_key') }}</td>
@@ -71,6 +71,16 @@
           <td class="text-break">{{ item.get('referer') }}</td>
           <td>{{ item.get('crawl_mode') }}</td>
           <td class="text-break">{{ item.get('parent') }}</td>
+          <td>
+            <form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_queue') }}" class="mb-0">
+              <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+              <input type="hidden" name="crawl_key" value="{{ pending.get('crawl_key') }}">
+              <input type="hidden" name="sample_size" value="{{ meta.get('sample_size') }}">
+              <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Remove pending crawl item {{ pending.get('crawl_key') }} from the queue?')">
+                <i class="fas fa-times"></i> Remove
+              </button>
+            </form>
+          </td>
         </tr>
       {% endfor %}</tbody>
     </table></div>

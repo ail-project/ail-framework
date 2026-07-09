@@ -7,9 +7,11 @@ API Helper
 
 """
 import base64
+import binascii
 import gzip
 import hashlib
 import json
+import magic
 import os
 import pickle
 import re
@@ -71,6 +73,17 @@ activate_crawler = config_loader.get_config_str("Crawler", "activate_crawler")
 D_HAR = config_loader.get_config_boolean('Crawler', 'default_har')
 D_SCREENSHOT = config_loader.get_config_boolean('Crawler', 'default_screenshot')
 config_loader = None
+
+
+# IMAGE
+MAX_IMAGE_SIZE = 5000000
+ACCEPTED_IMAGE_MIME_TYPES = {
+    # 'image/gif',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+}
+
 
 # logger_crawler = logging.getLogger('crawlers.log')
 
@@ -749,6 +762,55 @@ def _gzip_har(har_id):
 def _gzip_all_hars():
     for har_id in get_all_har_ids():
         _gzip_har(har_id)
+
+
+def extract_images_from_har(har, size_limit=MAX_IMAGE_SIZE):
+    images = {}
+    if not har:
+        return images
+    for entry in har.get('log', {}).get('entries', []):
+        request = entry.get('request', {})
+        response = entry.get('response', {})
+        url = request.get('url')
+        content = response.get('content', {})
+        mime_type = content.get('mimeType', '')
+        body = content.get('text')
+        if not url or not body:
+            continue
+        is_b64 = content.get('encoding') == 'base64'
+        if response.get('status') != 200 or mime_type not in ACCEPTED_IMAGE_MIME_TYPES:
+            continue
+        image_content = _get_image_content_bytes(body, is_b64)
+        if not image_content:
+            continue
+        if 0 < size_limit < len(image_content):
+            print('HAR IMAGE SIZE LIMIT', url)
+            continue
+        detected_mime_type = magic.from_buffer(image_content, mime=True)
+        if detected_mime_type not in ACCEPTED_IMAGE_MIME_TYPES:
+            print('HAR IMAGE INVALID MIME TYPE', detected_mime_type, url)
+            continue
+        images[url] = {
+            'content': body,
+            'b64': is_b64,
+            'mime_type': detected_mime_type,
+        }
+    return images
+
+def _get_image_content_bytes(content, b64=False):
+    if b64:
+        try:
+            if isinstance(content, str):
+                content = ''.join(content.split())
+            return base64.b64decode(content, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, str):
+        return content.encode()
+    return None
+
 
 # # # - - # # #
 

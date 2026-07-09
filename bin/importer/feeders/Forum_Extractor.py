@@ -22,6 +22,7 @@ from lib.objects.ForumThreads import ForumThread
 from lib.objects.Posts import Post
 from lib.objects.UsersAccount import UserAccount
 from lib.objects.Usernames import Username
+from lib.objects import Images
 
 # TODO IMAGES + USER ACCOUNTS + FILENAMES
 class Forum_ExtractorFeeder(DefaultFeeder):
@@ -35,6 +36,7 @@ class Forum_ExtractorFeeder(DefaultFeeder):
         self.seen_subforums = set()
         self.root_subforums = set()
         self.objs_to_process = set()
+        self.har_images = {}
 
     def process_meta(self):
         """Import one forum-extractor result dictionary from self.json_meta."""
@@ -60,6 +62,7 @@ class Forum_ExtractorFeeder(DefaultFeeder):
         forum_type = result.get('forum_type')
         forum_id = result.get('forum_id')
         extracted = result.get('extracted') or {}
+        self.har_images = result.get('har_images')
 
         if not forum_type or not forum_id:
             # TODO Exception + logs
@@ -307,15 +310,47 @@ class Forum_ExtractorFeeder(DefaultFeeder):
         post.create(post_id, post_timestamp, content, parent_thread, self.forum, state=post_data.get('post_state'), quote_ids=quote_ids)
         for reaction in post_data.get('reactions', []):
             if isinstance(reaction, dict):
-                reaction_name = reaction.get('reaction')
+                reaction_name = reaction.get('reaction_type')
                 reaction_count = reaction.get('count')
             else:
                 reaction_name = None
                 reaction_count = None
             if reaction_name and reaction_count:
+                reaction_name = reaction_name.strip().lower().replace("-", "_").strip("_")
                 post.add_reaction(reaction_name, int(reaction_count))
+
+        # images
+        # print('--------------------------------------------------')
+        # print(post_data.get('content', {}).get('images', []))
+        for url in post_data.get('content', {}).get('images', []):
+            print('URL:', url)
+            if url in self.har_images:
+                image = self._create_image_from_har_url(url, post.get_date(), post)
+                self.objs_to_process.add(image)
+
         user_account = self._create_post_user_account(post_data.get('author'), post, post_timestamp)
+        if user_account:
+            author_image_url = (post_data.get('author', {})).get('author_profile_image_url')
+            if author_image_url in self.har_images:
+                image = self._create_image_from_har_url(author_image_url, post.get_date(), user_account)
+                if image:
+                    user_account.set_icon(image.get_global_id())
+                    self.objs_to_process.add(image)
         return post
+
+    def _create_image_from_har_url(self, url, date, obj):
+        print(url)
+        image_payload = self.har_images[url]
+        content = image_payload['content']
+        if not image_payload['b64'] and isinstance(content, str):
+            content = content.encode()
+        image = Images.create(content, b64=image_payload['b64'])
+        if image:
+            # create correlation image - obj # TODO correlation forum ?
+            image.add(date, obj)
+            self.objs_to_process.add(image)
+            print(image.id)
+        return image
 
     # TODO A POST MUST HAVE AN USER ACCOUNT
     def _create_post_user_account(self, author, post, timestamp):

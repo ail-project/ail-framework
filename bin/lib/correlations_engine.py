@@ -70,11 +70,11 @@ CORRELATION_TYPES_BY_OBJ = {
     "subforum": ["forum", "subforum", "forum-thread"],
     "forum-thread": ["subforum", "post"],
     # TODO Extend to detection of text -> same as message
-    "post": ["forum", "forum-thread", "user-account", *COMMON_TEXT_OBJECT_CORRELATIONS],
+    "post": ["forum", "forum-thread", "image", "user-account", *COMMON_TEXT_OBJECT_CORRELATIONS],
     "file-name": ["chat", "item", "message", "pdf"],
     "gtracker": ["domain", "item"],
     "hhhash": ["domain"],
-    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "qrcode", "user-account"],  # TODO subchannel + threads ????
+    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "post", "qrcode", "user-account"],  # TODO subchannel + threads ????
     "ip": ["ssh-key"],
     "item": ["cve", "cryptocurrency", "decoded", "domain", "dom-hash", "favicon", "file-name", "gtracker", "mail", "message", "pdf", "pgp", "screenshot", "title", "username"],  # chat ???
     "mail": ["domain", "item", "message"],  # chat ??

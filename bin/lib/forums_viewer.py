@@ -456,6 +456,15 @@ def purge_forum_crawl_queue(forum_id):
         'deleted': forum.purge_crawl_queue(),
     }, 200
 
+def remove_forum_pending_crawl_item(forum_id, crawl_key):
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return {"status": "error", "reason": "Unknown forum"}, 404
+    removed = forum.remove_pending_crawl_item(crawl_key)
+    if not removed:
+        return {'status': 'error', 'reason': 'not_pending'}, 404
+    return {'forum_id': forum_id, 'crawl_key': crawl_key}, 200
+
 def get_breadcrumb_for_object(obj):
     """Return parent breadcrumb entries from Forum to the given object."""
     breadcrumb = []
@@ -546,7 +555,6 @@ def api_get_forum_thread(subtype, thread_id, page=1, nb=50, translation_target=N
         'pagination': pagination,
         'tags': tags,
     }, 200
-
 
 
 def api_get_post(post_id, translation_target=None):

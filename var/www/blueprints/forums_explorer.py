@@ -92,10 +92,21 @@ def forum_explorer_crawler_status():
     return render_template('forums_explorer_crawler_index.html', forums=forums, bootstrap_label=bootstrap_label)
 
 
-@forums_explorer.route("/forums/explorer/crawler/queue", methods=['GET'])
+@forums_explorer.route("/forums/explorer/crawler/queue", methods=['GET', 'POST'])
 @login_required
 @login_admin
 def forum_explorer_crawler_queue():
+    if request.method == 'POST':
+        forum_id = request.form.get('forum_id')
+        crawl_key = request.form.get('crawl_key')
+        sample_size = request.form.get('sample_size') or 50
+        res = forums_viewer.remove_forum_pending_crawl_item(forum_id, crawl_key)
+        if res[1] != 200:
+            error = res[0].get('reason')
+            return redirect(url_for('forums_explorer.forum_explorer_crawler_queue', id=forum_id, sample_size=sample_size, error=error))
+        success = f"Removed pending crawl item: {crawl_key}"
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_queue', id=forum_id, sample_size=sample_size, success=success))
+
     forum_id = request.args.get('id')
     sample_size = request.args.get('sample_size') or 50
     meta = forums_viewer.api_get_forum_crawl_queue(forum_id, sample_size=sample_size)
