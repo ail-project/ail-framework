@@ -68,7 +68,7 @@ class Post(AbstractObject):
     def get_thread_sub_id(self):
         thread = self.get_correlation('forum-thread')
         if thread.get('forum-thread'):
-            return thread["forum-thread"].pop()
+            return thread["forum-thread"].pop().split(':', 1)[1]
         return None
 
     def get_date(self):

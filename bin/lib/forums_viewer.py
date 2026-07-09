@@ -30,7 +30,7 @@ from lib.crawlers import Cookiejar
 # config_loader = ConfigLoader()
 # config_loader = None
 
-_FORUM_OPTIONS = {'forum_type', 'info', 'name', 'url', 'banner', 'nb_subforums', 'nb_orphan_subforums'}
+_FORUM_OPTIONS = {'banner', 'forum_type', 'info', 'name', 'url', 'nb_subforums', 'nb_orphan_subforums', 'svg_icon'}
 _SUBFORUM_OPTIONS = {'info', 'url', 'nb_subforums', 'nb_threads'}
 _THREAD_OPTIONS = {'name', 'info', 'url', 'flags', 'nb_posts'}
 _POST_OPTIONS = {'content', 'images', 'language', 'link', 'reactions', 'state', 'timestamp', 'translation', 'user-account'}
@@ -363,6 +363,159 @@ def _subforum_threads_meta(subforum):
         inactive_threads,
         key=lambda m: ((m.get('name') or m.get('title') or m.get('id')).lower(), m.get('id')),
     )
+
+
+def _get_user_account_posts_sorted(user_account):
+    posts = []
+    for pid in user_account.get_posts():
+        _, post_id = pid.split(':', 1)
+        post = Posts.Post(post_id)
+        timestamp = post.get_timestamp()
+        if timestamp and post.exists():
+            posts.append((post, float(timestamp)))
+    return sorted(posts, key=lambda post_item: post_item[1], reverse=True)
+
+
+def _paginate_items(items, page=1, nb=50):
+    try:
+        page = int(page)
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        nb = int(nb)
+    except (TypeError, ValueError):
+        nb = 50
+    if page < 1:
+        page = 1
+    if nb < 1:
+        nb = 50
+    total = len(items)
+    nb_pages = int(total / nb)
+    if total and total % nb:
+        nb_pages += 1
+    if not nb_pages:
+        nb_pages = 1
+    if page > nb_pages:
+        page = nb_pages
+    start = (page - 1) * nb
+    end = min(start + nb, total)
+    return items[start:end], {'nb': nb, 'page': page, 'nb_pages': nb_pages, 'total': total, 'nb_first': start + 1 if total else 0, 'nb_last': end}
+
+
+def _posts_to_date_dict(post_items, translation_target=None):
+    posts_by_date = {}
+    for post, timestamp in post_items:
+        meta = post.get_meta(_POST_OPTIONS, translation_target=translation_target, flask_context=True)
+        date_day = Date.get_utc_date_from_timestamp(timestamp, separator='/')
+        posts_by_date.setdefault(date_day, []).append(meta)
+    return posts_by_date
+
+
+def get_user_account_threads_meta(user_account):
+    threads = []
+    for thread_str in user_account.get_forum_threads():
+        thread_subtype, thread_id = thread_str.split(':', 1)
+        thread = ForumThreads.ForumThread(thread_id, thread_subtype)
+        thread_meta = _thread_meta(thread) if thread.exists() else {'type': 'forum-thread', 'subtype': thread_subtype, 'id': thread_id}
+        user_thread_posts = user_account.get_correlation_iter_obj(thread, 'post')
+        thread_meta['nb_posts'] = len(user_thread_posts)
+        first_post_timestamp = None
+        last_post_timestamp = None
+        for post_id in user_thread_posts:
+            timestamp = Posts.Post(post_id).get_timestamp()
+            if not timestamp:
+                continue
+            timestamp = float(timestamp)
+            first_post_timestamp = timestamp if first_post_timestamp is None else min(first_post_timestamp, timestamp)
+            last_post_timestamp = timestamp if last_post_timestamp is None else max(last_post_timestamp, timestamp)
+        thread_meta['first_post_timestamp'] = first_post_timestamp or 0
+        thread_meta['last_post_timestamp'] = last_post_timestamp or 0
+        if first_post_timestamp:
+            thread_meta['first_post_date'] = Date.get_utc_datetime_from_timestamp(first_post_timestamp)
+        else:
+            thread_meta['first_post_date'] = None
+        if last_post_timestamp:
+            thread_meta['last_post_date'] = Date.get_utc_datetime_from_timestamp(last_post_timestamp)
+        else:
+            thread_meta['last_post_date'] = None
+        threads.append(thread_meta)
+    return sorted(threads, key=lambda thread: thread['last_post_timestamp'], reverse=True)
+
+
+def get_user_account_nb_all_week_posts(user_account):
+    week = {day: {hour: 0 for hour in range(24)} for day in ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']}
+    for post_gid in user_account.get_posts():
+        _, post_id = post_gid.split(':', 1)
+        timestamp = Posts.Post(post_id).get_timestamp()
+        if not timestamp:
+            continue
+        weekday, hour = Date.get_utc_weekday_hour_from_timestamp(timestamp)
+        week[weekday][hour] += 1
+    stats = []
+    for nb_day, day in enumerate(week):
+        for hour in week[day]:
+            stats.append({'date': day, 'day': nb_day, 'hour': hour, 'count': week[day][hour]})
+    return stats
+
+
+def get_user_account_nb_year_posts(user_account, year):
+    nb_year = {}
+    nb_max = 0
+    start = Date.convert_str_date_to_epoch(f'{year}0101')
+    end = Date.convert_str_date_to_epoch_end(f'{year}1231')
+    for post_gid in user_account.get_posts():
+        _, post_id = post_gid.split(':', 1)
+        timestamp = Posts.Post(post_id).get_timestamp()
+        if not timestamp:
+            continue
+        timestamp = int(float(timestamp))
+        if start <= timestamp <= end:
+            date = Date.get_utc_date_from_timestamp(timestamp, separator='-')
+            nb_year[date] = nb_year.get(date, 0) + 1
+            nb_max = max(nb_max, nb_year[date])
+    return nb_max, nb_year
+
+
+def api_get_user_account(user_id, forum_id, translation_target=None):
+    user_account = UsersAccount.UserAccount(user_id, forum_id)
+    if not user_account.exists():
+        return {"status": "error", "reason": "Unknown user-account"}, 404
+    meta = user_account.get_meta({'forums', 'icon', 'info', 'translation', 'username', 'usernames', 'username_meta', 'years', 'nb_posts'}, translation_target=translation_target)
+    forum = Forums.Forum(forum_id)
+    meta['forum'] = forum.get_meta(_FORUM_OPTIONS, flask_context=True) if forum.exists() else None
+    meta['threads'] = get_user_account_threads_meta(user_account)
+    return meta, 200
+
+
+def api_get_user_account_posts(user_id, forum_id, page=1, nb=50, translation_target=None):
+    user_account = UsersAccount.UserAccount(user_id, forum_id)
+    if not user_account.exists():
+        return {"status": "error", "reason": "Unknown user-account"}, 404
+    post_items, pagination = _paginate_items(_get_user_account_posts_sorted(user_account), page=page, nb=nb)
+    meta = user_account.get_meta({'icon', 'info', 'translation', 'username', 'usernames', 'username_meta'}, translation_target=translation_target)
+    forum = Forums.Forum(forum_id)
+    meta['forum'] = forum.get_meta(_FORUM_OPTIONS, flask_context=True) if forum.exists() else None
+    return {'user-account': meta, 'posts': _posts_to_date_dict(post_items, translation_target=translation_target), 'pagination': pagination}, 200
+
+
+def api_get_user_account_nb_all_week_posts(user_id, forum_id):
+    user_account = UsersAccount.UserAccount(user_id, forum_id)
+    if not user_account.exists():
+        return {"status": "error", "reason": "Unknown user-account"}, 404
+    return get_user_account_nb_all_week_posts(user_account), 200
+
+
+def api_get_user_account_nb_year_posts(user_id, forum_id, year):
+    user_account = UsersAccount.UserAccount(user_id, forum_id)
+    if not user_account.exists():
+        return {"status": "error", "reason": "Unknown user-account"}, 404
+    if not year or year == 'null':
+        years = user_account.get_years()
+        year = years[-1] if years else int(Date.get_current_year())
+    else:
+        year = int(year)
+    nb_max, nb = get_user_account_nb_year_posts(user_account, year)
+    return {'max': nb_max, 'year': year, 'nb': [[date, nb[date]] for date in nb]}, 200
 
 
 def get_forums():

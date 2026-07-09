@@ -21,6 +21,7 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib import ail_core
 from lib import chats_viewer
+from lib import forums_viewer
 from lib import Language
 from lib import Tag
 from lib import module_extractor
@@ -493,7 +494,12 @@ def objects_user_account():
     target = request.args.get('target')
     if target == "Don't Translate":
         target = None
-    user_account = chats_viewer.api_get_user_account(user_id, instance_uuid, translation_target=target)
+    obj = ail_objects.get_object('user-account', instance_uuid, user_id)
+    is_forum_account = obj.get_forum()
+    if is_forum_account:
+        user_account = forums_viewer.api_get_user_account(user_id, instance_uuid, translation_target=target)
+    else:
+        user_account = chats_viewer.api_get_user_account(user_id, instance_uuid, translation_target=target)
     # print()
     # print(user_account[0]['usernames'])
     # print()
@@ -505,10 +511,33 @@ def objects_user_account():
         translation_languages = Language.get_translation_languages()
         languages_stats = chats_viewer.api_get_languages_stats('user-account', instance_uuid, user_id)
         lang_endpoint = url_for('chats_explorer.objects_user_account_lang') + f'?subtype={instance_uuid}&id={user_id}&lang='
+        account_context = 'forum' if is_forum_account else 'chat'
         return render_template('user_account.html', meta=user_account, bootstrap_label=bootstrap_label,
                                ail_tags=Tag.get_modal_add_tags(user_account['id'], user_account['type'], user_account['subtype']),
                                languages_stats=languages_stats, lang_endpoint=lang_endpoint, all_languages=languages,
-                               translation_languages=translation_languages, translation_target=target)
+                               translation_languages=translation_languages, translation_target=target,
+                               account_context=account_context)
+
+
+@chats_explorer.route("/objects/user-account/posts", methods=['GET'])
+@login_required
+@login_read_only
+def objects_user_account_posts():
+    instance_uuid = request.args.get('subtype')
+    user_id = request.args.get('id')
+    page = request.args.get('page')
+    nb = request.args.get('nb')
+    target = request.args.get('target')
+    if target == "Don't Translate":
+        target = None
+    meta = forums_viewer.api_get_user_account_posts(user_id, instance_uuid, page=page, nb=nb, translation_target=target)
+    if meta[1] != 200:
+        return create_json_response(meta[0], meta[1])
+    languages = Language.get_all_languages()
+    translation_languages = Language.get_translation_languages()
+    return render_template('user_account_forum_posts.html', meta=meta[0], bootstrap_label=bootstrap_label,
+                           ail_tags=Tag.get_modal_add_tags(meta[0]['user-account']['id'], meta[0]['user-account']['type'], meta[0]['user-account']['subtype']),
+                           all_languages=languages, translation_languages=translation_languages, translation_target=target)
 
 @chats_explorer.route("/objects/user-account_usernames_timeline_json", methods=['GET']) # TODO API
 @login_required
@@ -591,7 +620,11 @@ def objects_user_account_lang():
 def user_account_messages_stats_week_all():
     instance_uuid = request.args.get('subtype')
     user_id = request.args.get('id')
-    week = chats_viewer.api_get_user_account_nb_all_week_messages(user_id, instance_uuid)
+    obj = ail_objects.get_object('user-account', instance_uuid, user_id)
+    if obj.get_forum():
+        week = forums_viewer.api_get_user_account_nb_all_week_posts(user_id, instance_uuid)
+    else:
+        week = chats_viewer.api_get_user_account_nb_all_week_messages(user_id, instance_uuid)
     if week[1] != 200:
         return create_json_response(week[0], week[1])
     else:
@@ -604,7 +637,11 @@ def user_account_messages_stats_year():
     instance_uuid = request.args.get('subtype')
     user_id = request.args.get('id')
     year = request.args.get('year')
-    stats = chats_viewer.api_get_user_account_nb_year_messages(user_id, instance_uuid, year)
+    obj = ail_objects.get_object('user-account', instance_uuid, user_id)
+    if obj.get_forum():
+        stats = forums_viewer.api_get_user_account_nb_year_posts(user_id, instance_uuid, year)
+    else:
+        stats = chats_viewer.api_get_user_account_nb_year_messages(user_id, instance_uuid, year)
     if stats[1] != 200:
         return create_json_response(stats[0], stats[1])
     else:

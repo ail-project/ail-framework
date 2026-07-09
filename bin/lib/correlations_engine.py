@@ -68,7 +68,7 @@ CORRELATION_TYPES_BY_OBJ = {
     "favicon": ["domain", "item"],  # TODO Decoded
     "forum": ["post", "subforum", "user-account"],
     "subforum": ["forum", "subforum", "forum-thread"],
-    "forum-thread": ["subforum", "post"],
+    "forum-thread": ["subforum", "post", "user-account"],
     # TODO Extend to detection of text -> same as message
     "post": ["forum", "forum-thread", "image", "user-account", *COMMON_TEXT_OBJECT_CORRELATIONS],
     "file-name": ["chat", "item", "message", "pdf"],
@@ -86,7 +86,7 @@ CORRELATION_TYPES_BY_OBJ = {
     "screenshot": ["barcode", "domain", "item", "qrcode"],
     "ssh-key": ["domain", "ip"],
     "title": ["domain", "item"],
-    "user-account": ["chat", "chat-subchannel", "chat-thread", "forum", "image", "message", "ocr", "post", "username"],
+    "user-account": ["chat", "chat-subchannel", "chat-thread", "forum", "forum-thread", "image", "message", "ocr", "post", "username"],
     "username": ["domain", "item", "message", "user-account"],
 }
 

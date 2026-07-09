@@ -336,6 +336,7 @@ class Forum_ExtractorFeeder(DefaultFeeder):
                 if image:
                     user_account.set_icon(image.get_global_id())
                     self.objs_to_process.add(image)
+            user_account.add_correlation(parent_thread.type, parent_thread.subtype, parent_thread.id)
         return post
 
     def _create_image_from_har_url(self, url, date, obj):

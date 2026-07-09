@@ -114,7 +114,8 @@ def get_object_all_subtypes(obj_type):  # TODO Dynamic subtype
         chat_protocols.add('telegram')
         return sorted(chat_protocols)
     if obj_type == 'user-account':
-        return r_object.smembers(f'all_chat:subtypes')
+        # return r_object.smembers(f'all_chat:subtypes')
+        return r_object.smembers(f'all_user-account:subtypes')
     return []
 
 def get_default_correlation_objects():

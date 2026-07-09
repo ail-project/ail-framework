@@ -118,6 +118,18 @@ def get_utc_datetime_from_timestamp(timestamp):
     timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
     return timestamp.strftime('%Y-%m-%d %H:%M:%S')
 
+def get_utc_date_from_timestamp(timestamp, separator=''):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    if separator:
+        return timestamp.strftime(f'%Y{separator}%m{separator}%d')
+    return timestamp.strftime('%Y%m%d')
+
+
+def get_utc_weekday_hour_from_timestamp(timestamp):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    return timestamp.strftime('%a'), timestamp.hour
+
+
 def get_date_from_timestamp(timestamp):
     return datetime.datetime.fromtimestamp(timestamp).strftime('%Y%m%d')
 

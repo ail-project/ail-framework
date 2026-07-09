@@ -145,6 +145,18 @@ class UserAccount(AbstractSubtypeObject):
     def get_nb_chats(self):
         return self.get_nb_correlation('chat')
 
+    def get_forum(self):
+        return self.get_correlation('forum').get('forum', set()).pop()
+
+    def get_posts(self):
+        return self.get_correlation('post').get('post', set())
+
+    def get_nb_posts(self):
+        return self.get_nb_correlation('post')
+
+    def get_forum_threads(self):
+        return self.get_correlation('forum-thread').get('forum-thread', set())
+
     def get_chat_subchannels(self):
         chats = self.get_correlation('chat-subchannel')['chat-subchannel']
         return chats
@@ -228,6 +240,10 @@ class UserAccount(AbstractSubtypeObject):
             meta['chats'] = self.get_chats()
         if 'nb_chats' in options:
             meta['nb_chats'] = self.get_nb_chats()
+        if 'forums' in options:
+            meta['forums'] = self.get_forum()
+        if 'nb_posts' in options:
+            meta['nb_posts'] = self.get_nb_posts()
         if 'subchannels' in options:
             meta['subchannels'] = self.get_chat_subchannels()
         if 'threads' in options:
