@@ -142,6 +142,25 @@ class Post(AbstractObject):
                 objs_containers.add(user_account)
         return objs_containers
 
+    def _get_image_ocr(self, obj_id):
+        return bool(self.get_correlation('ocr').get('ocr'))
+
+    def get_images(self):
+        images = []
+        for str_obj in self.get_correlation('image').get('image', []):
+            _, obj_id = str_obj.split(':', 1)
+            images.append(obj_id)
+        return images
+
+    def get_images_meta(self):
+        images = []
+        for obj_id in self.get_images():
+            image_description = self._get_obj_field('image', None, obj_id, 'desc:qwen2.5vl')
+            if image_description:
+                image_description = image_description.replace("`", ' ')
+            images.append({'id': obj_id, 'ocr': self._get_image_ocr(obj_id), 'description': image_description})
+        return images
+
     def get_reactions(self):
         return r_object.hgetall(f'meta:reactions:{self.type}::{self.id}')
 
@@ -185,6 +204,8 @@ class Post(AbstractObject):
         if 'translation' in options and translation_target:
             source = meta.get('language')
             meta['translation'] = self.translate(content=meta.get('content'), source=source, target=translation_target)
+        if 'images' in options:
+            meta['images'] = self.get_images_meta()
         if 'reactions' in options:
             meta['reactions'] = self.get_reactions()
         return meta

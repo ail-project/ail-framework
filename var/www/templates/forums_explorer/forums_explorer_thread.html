@@ -16,6 +16,8 @@
     .forum-post-header { background: #eef3f6; border-bottom: 1px solid #d7dee2; }
     .forum-post-content { white-space: pre-wrap; font-family: inherit; font-size: 1rem; line-height: 1.45; }
     .forum-avatar { width: 72px; height: 72px; object-fit: cover; }
+    .forum-post-image { max-width: 100%; max-height: 420px; object-fit: contain; }
+    .object_image { filter: blur(var(--object-image-blur, 5px)); }
     .date-divider { display: flex; align-items: center; color: #6c757d; }
     .date-divider:before, .date-divider:after { content: ''; flex: 1; height: 1px; background: #d7dee2; }
     .date-divider span { margin: 0 .75rem; font-weight: 600; }
@@ -79,6 +81,9 @@
       </div>
 
       {% if meta['posts'] %}
+        <div class="mb-3">
+          {% include 'objects/image/block_blur_img_slider.html' %}
+        </div>
         {% for date, posts in meta['posts'].items() %}
           <div class="date-divider my-4"><span>{{ date }}</span></div>
           {% for post in posts %}
@@ -111,6 +116,27 @@
                     <div class="mt-2">
                       {% for reaction in post['reactions'] %}
                         <span class="border rounded px-1">{{ reaction }} {{ post['reactions'][reaction] }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  {% if post.get('images') %}
+                    <div class="mt-3 d-flex flex-wrap align-items-start">
+                      {% for post_image in post['images'] %}
+                        <div class="mr-2 mb-2">
+                          <a href="{{ url_for('correlation.show_correlation', type='image', id=post_image['id']) }}" target="_blank" title="Open image correlation">
+                            <img class="object_image forum-post-image border rounded mb-1" src="{{ url_for('objects_image.image', filename=post_image['id']) }}" loading="lazy" alt="Post image {{ loop.index }}">
+                          </a>
+                          <div>
+                            {% if post_image.get('ocr') %}
+                              <a class="btn btn-info btn-sm" target="_blank" href="{{ url_for('objects_ocr.object_ocr', id=post_image['id']) }}"><i class="fas fa-expand"></i> OCR</a>
+                            {% endif %}
+                            {% if ollama_enabled or post_image.get('description') %}
+                              {% with ollama_description=post_image['description'], image_gid='image::'+post_image['id'] %}
+                                {% include 'objects/image/block_img_ollama_small.html' %}
+                              {% endwith %}
+                            {% endif %}
+                          </div>
+                        </div>
                       {% endfor %}
                     </div>
                   {% endif %}

@@ -22,6 +22,7 @@ sys.path.append(os.environ['AIL_BIN'])
 from lib import forums_viewer
 from lib import Language
 from lib import ail_users
+from lib import images_engine
 
 # ============ BLUEPRINT ============
 forums_explorer = Blueprint('forums_explorer', __name__, template_folder=os.path.join(os.environ['AIL_FLASK'], 'templates/forums_explorer'))
@@ -304,4 +305,5 @@ def forum_explorer_thread():
     languages = Language.get_all_languages()
     translation_languages = Language.get_translation_languages()
     return render_template('forums_explorer_thread.html', meta=meta[0], bootstrap_label=bootstrap_label,
+                           ollama_enabled=images_engine.is_ollama_enabled(),
                            all_languages=languages, translation_languages=translation_languages, translation_target=target)
