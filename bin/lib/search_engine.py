@@ -109,7 +109,10 @@ class MeiliSearch:
     def __init__(self):
         self.client = meilisearch.Client(M_URL, M_KEY, timeout=5)
         self.search_client = meilisearch.Client(M_URL, M_KEY, timeout=30)
-        self._known_indexes = set(self.get_indexes())
+        try:
+            self._known_indexes = set(self.get_indexes())
+        except meilisearch.errors.MeilisearchCommunicationError:
+            self._known_indexes = set()
 
     def init(self):
         self.create_missing_indexes()
