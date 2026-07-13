@@ -95,6 +95,9 @@ class Crawler(AbstractModule):
             passivedns.set_default_passive_dns()
         self.passive_ssh = SSHKeys.is_passive_ssh_enabled()
 
+        # Interactive capture session cache
+        self.interactive_session = None
+
         # Capture
         self.har = None
         self.screenshot = None
@@ -208,7 +211,8 @@ class Crawler(AbstractModule):
                     if capture_start == 0:
                         task = capture.get_task()
                         error_message = f'Lacus returned an unknown capture state for task {task.uuid}'
-                        crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
+                        if task.get_parent() == 'interactive':
+                            crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                         task.delete()
                         capture.delete()
                         self.logger.warning(f'capture UNKNOWN ERROR STATE, {task.uuid} Removed from queue')
@@ -216,7 +220,8 @@ class Crawler(AbstractModule):
                     if int(time.time()) - capture_start > 600:  # TODO ADD in new crawler config
                         task = capture.get_task()
                         error_message = f'Lacus capture UNKNOWN timeout for task {task.uuid}'
-                        if crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message):
+                        if task.get_parent() == 'interactive':
+                            crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                             self.logger.warning(f'capture UNKNOWN Timeout, {task.uuid} Interactive session failed')
                         else:
                             task.reset()
@@ -229,7 +234,8 @@ class Crawler(AbstractModule):
                     if int(time.time()) - capture_start > 36000:  # TODO ADD in new crawler config
                         task = capture.get_task()
                         error_message = f'Lacus capture QUEUED timeout for task {task.uuid}'
-                        if crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message):
+                        if task.get_parent() == 'interactive':
+                            crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                             self.logger.warning(f'capture QUEUED Timeout, {task.uuid}, {task.get_url()} Interactive session failed, start_time={capture_start}')
                         else:
                             task.reset()
@@ -245,7 +251,8 @@ class Crawler(AbstractModule):
                 else:
                     task = capture.get_task()
                     error_message = f'Lacus returned invalid capture status {status} for task {task.uuid}'
-                    if crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message):
+                    if task.get_parent() == 'interactive':
+                        crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                         self.logger.warning(f'ERROR INVALID CAPTURE STATUS {status}, {task.uuid} Interactive session failed')
                     else:
                         task.reset()
@@ -327,6 +334,8 @@ class Crawler(AbstractModule):
         print('saving capture', capture.uuid)
 
         task = capture.get_task()
+        self.interactive_session = None
+
         domain = task.get_domain()
         print(domain)
         if not domain:
@@ -341,6 +350,9 @@ class Crawler(AbstractModule):
         self.parent = self.domain.get_parent()
         self.original_domain = Domain(domain)
 
+        if task.get_parent() == 'interactive':
+            self.interactive_session = crawlers.get_interactive_session_by_capture(capture.uuid)
+
         epoch = int(time.time())
         parent_id = task.get_parent()
 
@@ -351,14 +363,19 @@ class Crawler(AbstractModule):
             if entries.get('error'):
                 error_message = str(entries['error'])
                 self.logger.warning(error_message)
-                crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
+                if self.interactive_session:
+                    crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message, session=self.interactive_session)
             else:
-                cookiejar_saved = crawlers.finalize_interactive_cookiejar_session(capture.uuid, entries.get('storage', {}))
-                if cookiejar_saved is False:
-                    crawlers.release_interactive_session_by_capture(capture.uuid, status='error')
-                else:
-                    crawlers.release_interactive_session_by_capture(capture.uuid, status='completed')
+                cookiejar_saved = None
+                if self.interactive_session:
+                    cookiejar_saved = crawlers.finalize_interactive_cookiejar_session(capture.uuid, entries.get('storage', {}), session=self.interactive_session)
+                if self.interactive_session:
+                    if cookiejar_saved is False:
+                        crawlers.release_interactive_session_by_capture(capture.uuid, status='error', session=self.interactive_session)
+                    else:
+                        crawlers.release_interactive_session_by_capture(capture.uuid, status='completed', session=self.interactive_session)
             task.remove()
+            self.interactive_session = None
             self.root_item = None
             return None
         self.har = task.get_har()
@@ -419,9 +436,11 @@ class Crawler(AbstractModule):
         if crawlers.is_domain_correlation_cache(self.original_domain.id):
             crawlers.save_domain_correlation_cache(self.original_domain.was_up(), domain)
 
-        crawlers.finalize_interactive_cookiejar_session(capture.uuid, entries.get('storage', {}))
-        crawlers.release_interactive_session_by_capture(capture.uuid, status='completed')
+        if self.interactive_session:
+            crawlers.finalize_interactive_cookiejar_session(capture.uuid, entries.get('storage', {}), session=self.interactive_session)
+            crawlers.release_interactive_session_by_capture(capture.uuid, status='completed', session=self.interactive_session)
         task.remove()
+        self.interactive_session = None
         self.root_item = None
 
     def save_capture_response(self, capture, task, parent_id, entries):
@@ -433,8 +452,9 @@ class Crawler(AbstractModule):
             # TODO IMPROVE ERROR MESSAGE
             error_message = str(entries['error'])
             self.logger.warning(str(entries['error']))
-            if crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message):
-                return False
+            if self.interactive_session:
+                if crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message, session=self.interactive_session):
+                    return False
             if error_message.startswith('Something went poorly'):
                 # Timeout, require restart of lacus
                 if 'Too many open files' in error_message:
@@ -598,8 +618,8 @@ class Crawler(AbstractModule):
         if entries_children:
             for children in entries_children:
                 self.save_capture_response(capture, task, parent_id, children)
-        if crawled_domain:
-            crawlers.set_interactive_session_crawled_domain_by_capture(capture.uuid, crawled_domain, url=crawled_url)
+        if crawled_domain and self.interactive_session:
+            crawlers.set_interactive_session_crawled_domain_by_capture(capture.uuid, crawled_domain, url=crawled_url, session=self.interactive_session)
         return True
 
 

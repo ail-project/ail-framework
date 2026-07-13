@@ -166,7 +166,7 @@ def interactive_capture_current():
     session = crawlers.get_user_active_interactive_session(user_id)
     if session:
         return redirect(url_for('crawler_splash.interactive_capture_show', uuid=session.uuid))
-    return redirect(url_for('crawler_splash.manual'))
+    return render_template('interactive_capture_home.html', usage=crawlers.get_interactive_usage())
 
 @crawler_splash.route("/crawlers/interactive/start", methods=['POST'])
 @login_required

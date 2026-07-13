@@ -2393,24 +2393,29 @@ def get_interactive_session_by_capture(capture_uuid):
             return session
     return None
 
-def set_interactive_session_error_by_capture(capture_uuid, error_message, status='error'):
-    session = get_interactive_session_by_capture(capture_uuid)
+def set_interactive_session_error_by_capture(capture_uuid, error_message, status='error', session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
     if session and session.exists():
         session.set('error', str(error_message))
         session.release(status=status)
         return True
     return False
 
-def set_interactive_session_crawled_domain_by_capture(capture_uuid, domain, url=None):
-    session = get_interactive_session_by_capture(capture_uuid)
+def set_interactive_session_crawled_domain_by_capture(capture_uuid, domain, url=None, session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
     if session and session.exists():
         session.set('crawled_domain', domain)
         if url:
             session.set('crawled_url', url)
 
-def release_interactive_session_by_capture(capture_uuid, status='completed'):
-    session = get_interactive_session_by_capture(capture_uuid)
+def release_interactive_session_by_capture(capture_uuid, status='completed', session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
     if session and session.exists():
+        if status == 'completed':
+            session.set('capture_status', CaptureStatus.DONE.name)
         session.release(status=status)
 
 def get_active_interactive_sessions():
@@ -2466,13 +2471,13 @@ def _remote_headed_response_to_meta(response):
             meta[field] = getattr(response, field)
     return meta
 
-def finalize_interactive_cookiejar_session(capture_uuid, storage):
-    session = get_interactive_session_by_capture(capture_uuid)
+def finalize_interactive_cookiejar_session(capture_uuid, storage, session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
     if not session or session.get('save_cookiejar') != '1':
         return None
     try:
         if not storage or not isinstance(storage, dict):
-            print('storage error')
             session.set('error', 'No cookies or local storage returned by the interactive browser')
             return False
         cookiejar_uuid = create_cookiejar(session.get('user_org'), session.get_user(), session.get('cookiejar_description'), 0, None)
@@ -2519,10 +2524,17 @@ def refresh_interactive_session_status(session):
             session.set('error', remote['error'])
             session.release(status='error')
         capture_status = lacus.get_capture_status(capture_uuid)
-        session.set('capture_status', int(capture_status))
+        session.set('capture_status', capture_status_to_string(capture_status))
     except Exception as e:
         session.set('last_status_error', str(e))
     return session.get_meta()
+
+def capture_status_to_string(status):
+    try:
+        return CaptureStatus(int(status)).name
+    except (TypeError, ValueError):
+        return str(status)
+
 
 class InteractiveCrawlerSession:
     def __init__(self, session_uuid):
@@ -2559,6 +2571,10 @@ class InteractiveCrawlerSession:
             meta['launch_time'] = int(meta.get('launch_time', 0))
         except (TypeError, ValueError):
             meta['launch_time'] = 0
+        if meta.get('status') == 'completed':
+            meta['capture_status'] = CaptureStatus.DONE.name
+        elif meta.get('capture_status'):
+            meta['capture_status'] = capture_status_to_string(meta['capture_status'])
         return meta
 
     def release(self, status='completed'):
@@ -2644,6 +2660,8 @@ def api_get_interactive_session(session_uuid, user_id, is_admin=False):
         return {'error': 'Unknown interactive session'}, 404
     if not is_admin and session.get_user() != user_id:
         return {'error': 'Forbidden'}, 403
+    if session.get_status() in INTERACTIVE_FINAL_STATES:
+        return session.get_meta(), 200
     return refresh_interactive_session_status(session), 200
 
 def api_finish_interactive_session(session_uuid, user_id):
