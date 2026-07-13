@@ -202,6 +202,7 @@ def forum_explorer_crawler_account_interactive_cookiejar():
         'javascript': config.get('javascript'),
         'general_timeout_in_sec': 300,
         'save_cookiejar': True,
+        'cookiejar_only': True,
     }
     user_org = current_user.get_org()
     user_id = current_user.get_user_id()

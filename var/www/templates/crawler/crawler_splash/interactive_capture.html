@@ -25,12 +25,17 @@
             {% endif %}
             <p id="remote_status_row" {% if not session.remote_status or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><b>Remote browser status:</b> <span id="remote_status">{{ session.remote_status }}</span></p>
             <p id="capture_status_row" {% if not session.capture_status %}style="display:none;"{% endif %}><b>Capture status:</b> <span id="capture_status">{{ session.capture_status }}</span></p>
+            <p id="crawled_domain_row" {% if not session.crawled_domain %}style="display:none;"{% endif %}>
+                <b>Crawled domain:</b>
+                <span id="crawled_url" class="text-muted" {% if not session.crawled_url %}style="display:none;"{% endif %}>({{ session.crawled_url }})</span>
+                <a id="crawled_domain_link" href="{{ url_for('crawler_splash.showDomain') }}?domain={{ session.crawled_domain|urlencode }}">{{ session.crawled_domain }}</a>
+            </p>
             <a id="remote_url_btn" class="btn btn-primary" target="_blank" rel="noopener" href="{{ session.remote_url }}" {% if not session.remote_url or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><i class="fas fa-external-link-alt"></i> Open interactive browser</a>
             <div id="remote_starting" class="alert alert-info" {% if session.remote_url or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}>
                 The interactive browser is starting. This page updates automatically; the browser link will appear as soon as it is ready.
             </div>
             <div id="capture_processing" class="alert alert-success" {% if session.status not in ['finishing', 'completed'] %}style="display:none;"{% endif %}>
-                The interactive session is completed. AIL is saving and processing the browser state; results will appear in AIL when processing is finished.
+                The interactive session is completed. AIL is saving and processing the browser state; results URL will appear in AIL when processing is finished.
             </div>
             {% if session.status in ['starting', 'ready'] %}
                 <form class="mt-3" method="post" action="{{ url_for('crawler_splash.interactive_capture_finish', uuid=session.uuid) }}">
@@ -78,6 +83,13 @@ function refresh_interactive_status(){
         if(data.cookiejar_uuid){
             $('#cookiejar_link').attr('href', '{{ url_for('crawler_splash.crawler_cookiejar_show') }}?uuid=' + data.cookiejar_uuid).text(data.cookiejar_uuid);
             $('#cookiejar_row').show();
+        }
+        if(data.crawled_domain){
+            $('#crawled_domain_link').attr('href', '{{ url_for('crawler_splash.showDomain') }}?domain=' + encodeURIComponent(data.crawled_domain)).text(data.crawled_domain);
+            if(data.crawled_url){
+                $('#crawled_url').text('(' + data.crawled_url + ')').show();
+            }
+            $('#crawled_domain_row').show();
         }
         if(data.error || data.last_status_error){
             $('#interactive_error').text(data.error || data.last_status_error).show();

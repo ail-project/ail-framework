@@ -2393,6 +2393,21 @@ def get_interactive_session_by_capture(capture_uuid):
             return session
     return None
 
+def set_interactive_session_error_by_capture(capture_uuid, error_message, status='error'):
+    session = get_interactive_session_by_capture(capture_uuid)
+    if session and session.exists():
+        session.set('error', str(error_message))
+        session.release(status=status)
+        return True
+    return False
+
+def set_interactive_session_crawled_domain_by_capture(capture_uuid, domain, url=None):
+    session = get_interactive_session_by_capture(capture_uuid)
+    if session and session.exists():
+        session.set('crawled_domain', domain)
+        if url:
+            session.set('crawled_url', url)
+
 def release_interactive_session_by_capture(capture_uuid, status='completed'):
     session = get_interactive_session_by_capture(capture_uuid)
     if session and session.exists():
@@ -2454,12 +2469,12 @@ def _remote_headed_response_to_meta(response):
 def finalize_interactive_cookiejar_session(capture_uuid, storage):
     session = get_interactive_session_by_capture(capture_uuid)
     if not session or session.get('save_cookiejar') != '1':
-        return
+        return None
     try:
         if not storage or not isinstance(storage, dict):
             print('storage error')
             session.set('error', 'No cookies or local storage returned by the interactive browser')
-            return
+            return False
         cookiejar_uuid = create_cookiejar(session.get('user_org'), session.get_user(), session.get('cookiejar_description'), 0, None)
         print(f'New cookiejar {cookiejar_uuid}')
         cookiejar = Cookiejar(cookiejar_uuid)
@@ -2476,8 +2491,10 @@ def finalize_interactive_cookiejar_session(capture_uuid, storage):
                 account.set_cookiejar_uuid(cookiejar_uuid)
                 account.set_status('waiting')
                 forum.refresh_account_availability(account_id)
+        return True
     except Exception as e:
         session.set('error', str(e))
+        return False
 
 def refresh_interactive_session_status(session):
     capture_uuid = session.get_capture_uuid()
@@ -2578,14 +2595,29 @@ def api_start_interactive_capture(data, user_org, user_id):
     if error:
         return error, code
     try:
-        task_uuid = create_task(task['url'], depth=0, har=task['har'], screenshot=task['screenshot'], proxy=task['proxy'], tags=task['tags'], parent='interactive', priority=90, external=True)
+        cookiejar_only = bool(data.get('cookiejar_only'))
+        if cookiejar_only:
+            har = False
+            screenshot = False
+            tags = []
+            with_favicon = False
+        else:
+            har = task['har']
+            screenshot = task['screenshot']
+            tags = task['tags']
+            with_favicon = True
+
+        task_uuid = create_task(task['url'], depth=0, har=har, screenshot=screenshot, proxy=task['proxy'], tags=tags, parent='interactive', priority=90, external=True)
         if not task_uuid:
             session.release(status='error')
             return {'error': 'Aborted by Crawler'}, 400
         session.set('task_uuid', task_uuid)
+        if cookiejar_only:
+            CrawlerTask(task_uuid).set_cookiejar_only()
+            session.set('cookiejar_only', '1')
         capture_uuid = session.uuid
         lacus = get_lacus()
-        returned_uuid = lacus.enqueue(url=task['url'], depth=0, proxy=task['proxy'], with_favicon=True, force=True, uuid=capture_uuid, remote_headfull=True, java_script_enabled=task['javascript'], general_timeout_in_sec=int(data.get('general_timeout_in_sec') or 90))
+        returned_uuid = lacus.enqueue(url=task['url'], depth=0, proxy=task['proxy'], with_favicon=with_favicon, force=True, uuid=capture_uuid, remote_headfull=True, java_script_enabled=task['javascript'], general_timeout_in_sec=int(data.get('general_timeout_in_sec') or 90))
         capture_uuid = returned_uuid or capture_uuid
         session.set('capture_uuid', capture_uuid)
         r_cache.hset('crawler:interactive:captures', capture_uuid, session.uuid)
@@ -2848,6 +2880,12 @@ class CrawlerTask:
 
     def get_screenshot(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'screenshot') == '1'
+
+    def is_cookiejar_only(self):
+        return r_crawler.hget(f'crawler:task:{self.uuid}', 'cookiejar_only') == '1'
+
+    def set_cookiejar_only(self):
+        return self._set_field('cookiejar_only', 1)
 
     def get_queue(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'queue')
