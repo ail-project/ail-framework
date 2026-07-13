@@ -41,8 +41,15 @@
                     <div id="capture_processing" class="alert alert-success" {% if session.status not in ['finishing', 'completed'] %}style="display:none;"{% endif %}>
                         <i class="fas fa-check-circle"></i> The interactive session is completed. AIL is saving and processing the browser state; results URL will appear in AIL when processing is finished.
                     </div>
+                    <div id="capture_stopped_pending_import" class="alert alert-info" {% if session.remote_status|lower != 'stopped' or session.status in ['completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}>
+                        <i class="fas fa-hourglass-half"></i> The interactive browser capture is stopped. The crawler will import the capture, then the crawled domain will be available when processing is finished.
+                    </div>
+                    <div id="open_browser_help" class="alert alert-primary" {% if not session.remote_url or session.status not in ['starting', 'ready'] or session.remote_status|lower == 'stopped' %}style="display:none;"{% endif %}>
+                        <i class="fas fa-external-link-alt"></i> Click <strong>Open interactive browser</strong> to open the interactive session. When you are done browsing, come back to this page and click <strong>Finish capture</strong>.
+                    </div>
                     <div id="interactive_error" class="alert alert-danger" {% if not session.error %}style="display:none;"{% endif %}>{{ session.error }}</div>
-                    <div id="crawled_domain_card" class="alert alert-primary d-flex flex-column flex-md-row justify-content-between align-items-md-center" {% if not session.crawled_domain %}style="display:none;"{% endif %}>
+                    {% set show_crawled_domain = session.crawled_domain and session.crawled_url and session.capture_status == 'DONE' %}
+                    <div id="crawled_domain_card" class="alert alert-primary flex-column flex-md-row justify-content-between align-items-md-center {% if show_crawled_domain %}d-flex{% else %}d-none{% endif %}" {% if not show_crawled_domain %}style="display:none !important;"{% endif %}>
                         <div>
                             <div class="font-weight-bold"><i class="fas fa-globe"></i> Crawled domain ready</div>
                             <div>
@@ -50,7 +57,7 @@
                                 <span id="crawled_domain_text">{{ session.crawled_domain }}</span>
                             </div>
                         </div>
-                        <a id="crawled_domain_btn" class="btn btn-primary mt-3 mt-md-0" href="{{ url_for('crawler_splash.showDomain') }}?domain={{ session.crawled_domain|urlencode }}" {% if not session.crawled_domain %}style="display:none;"{% endif %}>
+                        <a id="crawled_domain_btn" class="btn btn-primary mt-3 mt-md-0 {% if not show_crawled_domain %}d-none{% endif %}" href="{{ url_for('crawler_splash.showDomain') }}?domain={{ session.crawled_domain|urlencode }}" {% if not show_crawled_domain %}style="display:none !important;"{% endif %}>
                             <i class="fas fa-external-link-alt"></i> Open domain
                         </a>
                     </div>
@@ -92,7 +99,7 @@
                             <a id="cookiejar_link" href="{{ url_for('crawler_splash.crawler_cookiejar_show') }}?uuid={{ session.cookiejar_uuid }}">{{ session.cookiejar_uuid }}</a>
                         </div>
                     {% endif %}
-                    <div class="list-group-item" id="crawled_domain_row" {% if not session.crawled_domain %}style="display:none;"{% endif %}>
+                    <div class="list-group-item {% if not show_crawled_domain %}d-none{% endif %}" id="crawled_domain_row" {% if not show_crawled_domain %}style="display:none !important;"{% endif %}>
                         <div class="text-muted small">Crawled domain</div>
                         <a id="crawled_domain_link" class="btn btn-sm btn-outline-primary mt-1" href="{{ url_for('crawler_splash.showDomain') }}?domain={{ session.crawled_domain|urlencode }}">
                             <i class="fas fa-external-link-alt"></i> {{ session.crawled_domain }}
@@ -144,15 +151,45 @@ function hide_finish_capture_button(){
 
 function is_capture_done(captureStatus){
     const normalizedCaptureStatus = String(captureStatus || '').toUpperCase();
-    return ['DONE', '1', 'COMPLETED', 'COMPLETE'].includes(normalizedCaptureStatus);
+    return normalizedCaptureStatus === 'DONE';
 }
 
 function is_remote_browser_stopped(remoteStatus){
     return String(remoteStatus || '').toLowerCase() === 'stopped';
 }
 
+function update_stopped_pending_import_message(status, remoteStatus){
+    const normalizedStatus = String(status || '').toLowerCase();
+    if(is_remote_browser_stopped(remoteStatus) && !interactiveFinalStates.includes(normalizedStatus)){
+        $('#capture_stopped_pending_import').show();
+    } else {
+        $('#capture_stopped_pending_import').hide();
+    }
+}
+
+function update_open_browser_help(status, remoteStatus){
+    const normalizedStatus = String(status || '').toLowerCase();
+    if($('#remote_url_btn').is(':visible') && ['starting', 'ready'].includes(normalizedStatus) && !is_remote_browser_stopped(remoteStatus)){
+        $('#open_browser_help').show();
+    } else {
+        $('#open_browser_help').hide();
+    }
+}
+
 function hide_remote_browser_controls(){
     $('#remote_url_btn').hide().addClass('d-none');
+}
+
+function show_crawled_domain_controls(){
+    $('#crawled_domain_card').removeClass('d-none').addClass('d-flex').removeAttr('style');
+    $('#crawled_domain_row').removeClass('d-none').removeAttr('style');
+    $('#crawled_domain_btn').removeClass('d-none').removeAttr('style');
+}
+
+function hide_crawled_domain_controls(){
+    $('#crawled_domain_card').removeClass('d-flex').addClass('d-none').attr('style', 'display:none !important;');
+    $('#crawled_domain_row').addClass('d-none').attr('style', 'display:none !important;');
+    $('#crawled_domain_btn').addClass('d-none').attr('style', 'display:none !important;');
 }
 
 function update_interactive_controls(status, captureStatus, remoteStatus){
@@ -177,6 +214,8 @@ function update_interactive_controls(status, captureStatus, remoteStatus){
     if(['finishing', 'completed'].includes(normalizedStatus)){
         $('#capture_processing').show();
     }
+    update_stopped_pending_import_message(normalizedStatus, remoteStatus);
+    update_open_browser_help(normalizedStatus, remoteStatus);
     if(interactiveFinalStates.includes(normalizedStatus)){
         stop_interactive_status_refresh();
     }
@@ -209,23 +248,22 @@ function refresh_interactive_status(){
             $('#remote_url_btn').attr('href', data.remote_url).show().removeClass('d-none');
             $('#remote_starting').hide();
         }
-        if(data.status){
-            update_interactive_controls(data.status, data.capture_status, currentRemoteStatus);
-        }
+        update_interactive_controls(data.status || $('#interactive_status').text(), data.capture_status || $('#capture_status').text(), currentRemoteStatus);
         if(data.cookiejar_uuid){
             $('#cookiejar_link').attr('href', '{{ url_for('crawler_splash.crawler_cookiejar_show') }}?uuid=' + data.cookiejar_uuid).text(data.cookiejar_uuid);
             $('#cookiejar_row').show();
         }
-        if(data.crawled_domain){
+        if(data.crawled_domain && data.crawled_url && is_capture_done(data.capture_status || $('#capture_status').text())){
             const domainUrl = '{{ url_for('crawler_splash.showDomain') }}?domain=' + encodeURIComponent(data.crawled_domain);
             $('#crawled_domain_link').attr('href', domainUrl).html('<i class="fas fa-external-link-alt"></i> ' + data.crawled_domain);
-            $('#crawled_domain_btn').attr('href', domainUrl).show();
+            $('#crawled_domain_btn').attr('href', domainUrl);
             $('#crawled_domain_text').text(data.crawled_domain);
             if(data.crawled_url){
                 $('#crawled_url').text('(' + data.crawled_url + ')').show();
             }
-            $('#crawled_domain_card').show();
-            $('#crawled_domain_row').show();
+            show_crawled_domain_controls();
+        } else if(!is_capture_done(data.capture_status || $('#capture_status').text())){
+            hide_crawled_domain_controls();
         }
         if(data.error || data.last_status_error){
             $('#interactive_error').text(data.error || data.last_status_error).show();
