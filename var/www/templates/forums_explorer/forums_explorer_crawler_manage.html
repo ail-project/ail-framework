@@ -167,6 +167,12 @@
           <label class="mt-2">subforums_to_crawl</label><textarea class="form-control" name="subforums_to_crawl" rows="2">{{ (account.get('subforums_to_crawl') or [])|join('\n') }}</textarea>
           <button class="btn btn-sm btn-primary mt-2">Save</button>
         </form>
+        <form method="post" action="{{ url_for('forums_explorer.forum_explorer_crawler_account_interactive_cookiejar') }}" class="mt-2">
+          <input type="hidden" name="forum_id" value="{{ forum['id'] }}">
+          <input type="hidden" name="account_id" value="{{ account['id'] }}">
+          <input type="hidden" name="url" value="{{ forum.get('url') or account.get('current_url') }}">
+          <button class="btn btn-sm btn-warning" {% if not forum.get('url') and not account.get('current_url') %}disabled{% endif %} onclick="return confirm('Start an interactive browser to create a user-level cookiejar for account {{ account['id'] }}?')"><i class="fas fa-desktop"></i> Create cookiejar interactively</button>
+        </form>
       </td>
       <td>
         {{ account.get('status') }}

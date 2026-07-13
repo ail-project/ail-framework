@@ -19,6 +19,10 @@
             <p><b>Usage:</b> {{ usage.active }} / {{ usage.max }}</p>
             <p><b>URL:</b> {{ session.url }}</p>
             <p><b>Status:</b> <span class="badge badge-info" id="interactive_status">{{ session.status }}</span></p>
+            {% if session.save_cookiejar == '1' %}
+                <p><b>Option:</b> save browser cookies and local storage as a user-level cookiejar</p>
+                <p id="cookiejar_row" {% if not session.cookiejar_uuid %}style="display:none;"{% endif %}><b>Cookiejar:</b> <a id="cookiejar_link" href="{{ url_for('crawler_splash.crawler_cookiejar_show') }}?uuid={{ session.cookiejar_uuid }}">{{ session.cookiejar_uuid }}</a></p>
+            {% endif %}
             <p id="remote_status_row" {% if not session.remote_status or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><b>Remote browser status:</b> <span id="remote_status">{{ session.remote_status }}</span></p>
             <p id="capture_status_row" {% if not session.capture_status %}style="display:none;"{% endif %}><b>Capture status:</b> <span id="capture_status">{{ session.capture_status }}</span></p>
             <a id="remote_url_btn" class="btn btn-primary" target="_blank" rel="noopener" href="{{ session.remote_url }}" {% if not session.remote_url or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><i class="fas fa-external-link-alt"></i> Open interactive browser</a>
@@ -26,7 +30,7 @@
                 The interactive browser is starting. This page updates automatically; the browser link will appear as soon as it is ready.
             </div>
             <div id="capture_processing" class="alert alert-success" {% if session.status not in ['finishing', 'completed'] %}style="display:none;"{% endif %}>
-                The interactive capture is completed. AIL is saving and processing the capture; results will appear in AIL when processing is finished.
+                The interactive session is completed. AIL is saving and processing the browser state; results will appear in AIL when processing is finished.
             </div>
             {% if session.status in ['starting', 'ready'] %}
                 <form class="mt-3" method="post" action="{{ url_for('crawler_splash.interactive_capture_finish', uuid=session.uuid) }}">
@@ -70,6 +74,10 @@ function refresh_interactive_status(){
         }
         if(['finishing', 'completed'].includes(data.status)){
             $('#capture_processing').show();
+        }
+        if(data.cookiejar_uuid){
+            $('#cookiejar_link').attr('href', '{{ url_for('crawler_splash.crawler_cookiejar_show') }}?uuid=' + data.cookiejar_uuid).text(data.cookiejar_uuid);
+            $('#cookiejar_row').show();
         }
         if(data.error || data.last_status_error){
             $('#interactive_error').text(data.error || data.last_status_error).show();

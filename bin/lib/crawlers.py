@@ -2451,6 +2451,34 @@ def _remote_headed_response_to_meta(response):
             meta[field] = getattr(response, field)
     return meta
 
+def finalize_interactive_cookiejar_session(capture_uuid, storage):
+    session = get_interactive_session_by_capture(capture_uuid)
+    if not session or session.get('save_cookiejar') != '1':
+        return
+    try:
+        if not storage or not isinstance(storage, dict):
+            print('storage error')
+            session.set('error', 'No cookies or local storage returned by the interactive browser')
+            return
+        cookiejar_uuid = create_cookiejar(session.get('user_org'), session.get_user(), session.get('cookiejar_description'), 0, None)
+        print(f'New cookiejar {cookiejar_uuid}')
+        cookiejar = Cookiejar(cookiejar_uuid)
+        cookiejar.set_cookies(storage.get('cookies', []))
+        cookiejar.set_local_storage(storage)
+        session.set('cookiejar_uuid', cookiejar_uuid)
+        forum_id = session.get('forum_id')
+        account_id = session.get('forum_account_id')
+        if forum_id and account_id:
+            from lib.objects import Forums
+            forum = Forums.Forum(forum_id)
+            if forum.exists() and forum.exists_account(account_id):
+                account = forum.get_crawl_account(account_id)
+                account.set_cookiejar_uuid(cookiejar_uuid)
+                account.set_status('waiting')
+                forum.refresh_account_availability(account_id)
+    except Exception as e:
+        session.set('error', str(e))
+
 def refresh_interactive_session_status(session):
     capture_uuid = session.get_capture_uuid()
     if not capture_uuid:
@@ -2535,6 +2563,7 @@ class InteractiveCrawlerSession:
     def expire(self):
         self.release(status='expired')
 
+
 def api_start_interactive_capture(data, user_org, user_id):
     task, resp = api_parse_task_dict_basic(data, user_id)
     if resp != 200:
@@ -2556,15 +2585,23 @@ def api_start_interactive_capture(data, user_org, user_id):
         session.set('task_uuid', task_uuid)
         capture_uuid = session.uuid
         lacus = get_lacus()
-        returned_uuid = lacus.enqueue(url=task['url'], depth=0, proxy=task['proxy'], with_favicon=True, force=True, uuid=capture_uuid, remote_headfull=True, general_timeout_in_sec=90)
+        returned_uuid = lacus.enqueue(url=task['url'], depth=0, proxy=task['proxy'], with_favicon=True, force=True, uuid=capture_uuid, remote_headfull=True, java_script_enabled=task['javascript'], general_timeout_in_sec=int(data.get('general_timeout_in_sec') or 90))
         capture_uuid = returned_uuid or capture_uuid
         session.set('capture_uuid', capture_uuid)
         r_cache.hset('crawler:interactive:captures', capture_uuid, session.uuid)
         create_capture(capture_uuid, task_uuid)
         CrawlerTask(task_uuid).start()
+        if data.get('save_cookiejar'):
+            session.set('save_cookiejar', '1')
+            session.set('user_org', user_org)
+            session.set('cookiejar_description', data.get('description') or f"{data.get('url')} - interactive cookiejar")
+            if data.get('forum_id') and data.get('forum_account_id'):
+                session.set('forum_id', data.get('forum_id'))
+                session.set('forum_account_id', data.get('forum_account_id'))
         refresh_interactive_session_status(session)
         return session.get_meta(), 200
     except Exception as e:
+        print(e)
         session.set('error', str(e))
         session.release(status='error')
         return {'error': 'Unable to start interactive capture', 'details': str(e)}, 502
@@ -3106,6 +3143,13 @@ def api_parse_task_dict_basic(data, user_id):
     else:
         depth_limit = 0
 
+    # JAVASCRIPT
+    javascript = data.get('javascript', True)
+    if isinstance(javascript, str):
+        javascript = javascript.lower() not in ['0', 'false', 'off']
+    else:
+        javascript = bool(javascript)
+
     # PROXY
     proxy = data.get('proxy', None)
     if proxy == 'onion' or proxy == 'tor' or proxy == 'force_tor':
@@ -3119,7 +3163,7 @@ def api_parse_task_dict_basic(data, user_id):
 
     tags = data.get('tags', [])
 
-    data = {'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'tags': tags}
+    data = {'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'javascript': javascript, 'tags': tags}
     if url:
         data['url'] = url
     elif urls:

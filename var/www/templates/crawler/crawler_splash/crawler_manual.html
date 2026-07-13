@@ -110,14 +110,25 @@
                                                             <li>AIL will reserve one interactive slot and return a browser link.</li>
                                                             <li>Only one URL is captured; scheduling, depth crawling, and multiple URLs are hidden.</li>
                                                             <li>Click <b>Finish capture</b> when the browser shows the page you want AIL to process.</li>
+                                                            <li>Enable <b>Create cookiejar</b> to save the browser cookies and local storage as a user-level cookiejar.</li>
                                                         </ul>
                                                     </div>
+                                                </div>
+                                            </div>
+                                            <div id="interactive_cookiejar_options" class="card bg-light text-dark border-warning mt-2" style="display:none;">
+                                                <div class="card-body py-3">
+                                                    <div class="custom-control custom-switch">
+                                                        <input class="custom-control-input" type="checkbox" name="interactive_cookiejar" value="True" id="interactive_cookiejar">
+                                                        <label class="custom-control-label font-weight-bold" for="interactive_cookiejar"><i class="fas fa-cookie-bite"></i> Create cookiejar from this interactive session</label>
+                                                    </div>
+                                                    <input class="form-control mt-2" type="text" id="cookiejar_description" name="cookiejar_description" placeholder="Cookiejar description (optional)">
+                                                    <small class="form-text text-muted">The cookiejar will be visible only to your user account.</small>
                                                 </div>
                                             </div>
                                             {% if interactive_usage and interactive_usage.active >= interactive_usage.max %}
                                                 <div class="alert alert-danger mt-2 mb-0">No interactive browser slot is currently available. Please wait for another session to finish or ask an administrator to increase the limit.</div>
                                             {% endif %}
-                                            <div id="interactive_warning" class="alert alert-info mt-2" style="display:none;">Interactive mode is enabled: enter one URL, open the returned browser link, then finish the capture from the session page.</div>
+                                            <div id="interactive_warning" class="alert alert-info mt-2" style="display:none;">Interactive mode is enabled: enter one URL, open the returned browser link, then finish from the session page.</div>
 
 											<div class="d-flex mt-3" id="interactive_incompatible_scheduler">
 												<i class="fas fa-user-ninja mt-1"></i> &nbsp;Manual&nbsp;&nbsp;
@@ -325,6 +336,7 @@ $(document).ready(function(){
 	});
 
 	$('#interactive_capture').on('change', function(){ interactive_input_controller(); });
+	$('#interactive_cookiejar').on('change', function(){ interactive_input_controller(); });
 
 	$('#lookyloo_archive').on('change', function(){
 		const fileName = $(this).val().split('\\').pop();
@@ -377,6 +389,7 @@ function interactive_input_controller() {
         $('#crawl_form').attr('action', '{{ url_for('crawler_splash.interactive_capture_start') }}');
         $('#interactive_warning').show();
         $('#interactive_help').show();
+        $('#interactive_cookiejar_options').show();
         $('#crawler_scheduler').prop('checked', false).prop('disabled', true);
         $('#depth_limit').val(0).prop('disabled', true);
         $('#urls_to_crawl').prop('disabled', true);
@@ -390,6 +403,8 @@ function interactive_input_controller() {
         $('#crawl_form').attr('action', '{{ url_for('crawler_splash.send_to_spider') }}');
         $('#interactive_warning').hide();
         $('#interactive_help').hide();
+        $('#interactive_cookiejar_options').hide();
+        $('#interactive_cookiejar').prop('checked', false);
         $('#crawler_scheduler').prop('disabled', false);
         $('#depth_limit').prop('disabled', false);
         $('#urls_to_crawl').prop('disabled', false);

@@ -20,6 +20,8 @@ sys.path.append(os.environ['AIL_BIN'])
 # Import Project packages
 ##################################
 from lib import forums_viewer
+from lib.objects import Forums
+from lib import crawlers
 from lib import Language
 from lib import ail_users
 from lib import images_engine
@@ -176,6 +178,39 @@ def forum_explorer_crawler_account_save():
         return create_json_response(res[0], res[1])
     return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id))
 
+
+@forums_explorer.route("/forums/explorer/crawler/account/cookiejar/interactive", methods=['POST'])
+@login_required
+@login_admin
+def forum_explorer_crawler_account_interactive_cookiejar():
+    forum_id = request.form.get('forum_id')
+    account_id = request.form.get('account_id')
+    forum = Forums.Forum(forum_id)
+    if not forum.exists():
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, error='Unknown forum'))
+    if not forum.exists_account(account_id):
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, error='Unknown account'))
+    config = forum.get_crawl_config()
+    url = forum.get_url() or request.form.get('url')
+    data = {
+        'url': url,
+        'description': f'Forum {forum_id} account {account_id} browser state',
+        'level': 0,
+        'forum_id': forum_id,
+        'forum_account_id': account_id,
+        'proxy': config.get('proxy'),
+        'javascript': config.get('javascript'),
+        'general_timeout_in_sec': 300,
+        'save_cookiejar': True,
+    }
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    res = crawlers.api_start_interactive_capture(data, user_org, user_id)
+    if res[1] != 200:
+        print(res)
+        error = res[0].get('error') or 'Unable to start interactive cookiejar session'
+        return redirect(url_for('forums_explorer.forum_explorer_crawler_manage', id=forum_id, error=error))
+    return redirect(url_for('crawler_splash.interactive_capture_show', uuid=res[0]['uuid']))
 
 
 @forums_explorer.route("/forums/explorer/crawler/account/reactivate", methods=['POST'])

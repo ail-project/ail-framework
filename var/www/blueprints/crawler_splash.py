@@ -186,6 +186,9 @@ def interactive_capture_start():
         proxy = 'force_tor'
     if proxy:
         data['proxy'] = proxy
+    if request.form.get('interactive_cookiejar'):
+        data['save_cookiejar'] = True
+        data['description'] = request.form.get('cookiejar_description')
     res = crawlers.api_start_interactive_capture(data, user_org, user_id)
     if res[1] != 200:
         return create_json_response(res[0], res[1])
