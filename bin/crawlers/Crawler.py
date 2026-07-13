@@ -392,6 +392,7 @@ class Crawler(AbstractModule):
         if crawlers.is_domain_correlation_cache(self.original_domain.id):
             crawlers.save_domain_correlation_cache(self.original_domain.was_up(), domain)
 
+        crawlers.release_interactive_session_by_capture(capture.uuid, status='completed')
         task.remove()
         self.root_item = None
 

@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AIL-Framework</title>
+    <link rel="icon" href="{{ url_for('static', filename='image/ail-icon.png')}}">
+    <link href="{{ url_for('static', filename='css/bootstrap4.min.css') }}" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/font-awesome.min.css') }}" rel="stylesheet">
+    <script src="{{ url_for('static', filename='js/jquery.js')}}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap4.min.js')}}"></script>
+</head>
+<body>
+{% include 'nav_bar.html' %}
+<div class="container-fluid"><div class="row">
+{% include 'crawler/menu_sidebar.html' %}
+<div class="col-12 col-lg-10" id="core_content">
+    <div class="card my-2">
+        <div class="card-header bg-dark text-white"><h3>Interactive crawler session</h3></div>
+        <div class="card-body">
+            <p><b>Usage:</b> {{ usage.active }} / {{ usage.max }}</p>
+            <p><b>URL:</b> {{ session.url }}</p>
+            <p><b>Status:</b> <span class="badge badge-info" id="interactive_status">{{ session.status }}</span></p>
+            <p id="remote_status_row" {% if not session.remote_status or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><b>Remote browser status:</b> <span id="remote_status">{{ session.remote_status }}</span></p>
+            <p id="capture_status_row" {% if not session.capture_status %}style="display:none;"{% endif %}><b>Capture status:</b> <span id="capture_status">{{ session.capture_status }}</span></p>
+            <a id="remote_url_btn" class="btn btn-primary" target="_blank" rel="noopener" href="{{ session.remote_url }}" {% if not session.remote_url or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}><i class="fas fa-external-link-alt"></i> Open interactive browser</a>
+            <div id="remote_starting" class="alert alert-info" {% if session.remote_url or session.status in ['finishing', 'completed', 'expired', 'error', 'closed'] %}style="display:none;"{% endif %}>
+                The interactive browser is starting. This page updates automatically; the browser link will appear as soon as it is ready.
+            </div>
+            <div id="capture_processing" class="alert alert-success" {% if session.status not in ['finishing', 'completed'] %}style="display:none;"{% endif %}>
+                The interactive capture is completed. AIL is saving and processing the capture; results will appear in AIL when processing is finished.
+            </div>
+            {% if session.status in ['starting', 'ready'] %}
+                <form class="mt-3" method="post" action="{{ url_for('crawler_splash.interactive_capture_finish', uuid=session.uuid) }}">
+                    <button class="btn btn-success"><i class="fas fa-check"></i> Finish capture</button>
+                </form>
+            {% endif %}
+            <div id="interactive_error" class="alert alert-danger mt-3" {% if not session.error %}style="display:none;"{% endif %}>{{ session.error }}</div>
+        </div>
+    </div>
+</div>
+</div></div>
+</body>
+<script>
+$(document).ready(function(){
+    $('#page-Crawler').addClass('active');
+    refresh_interactive_status();
+    setInterval(refresh_interactive_status, 5000);
+});
+
+function refresh_interactive_status(){
+    $.getJSON("{{ url_for('crawler_splash.interactive_capture_status', uuid=session.uuid) }}", function(data){
+        if(data.status){
+            $('#interactive_status').text(data.status);
+        }
+        if(data.remote_status){
+            $('#remote_status').text(data.remote_status);
+            $('#remote_status_row').show();
+        }
+        if(data.capture_status){
+            $('#capture_status').text(data.capture_status);
+            $('#capture_status_row').show();
+        }
+        if(data.remote_url){
+            $('#remote_url_btn').attr('href', data.remote_url).show();
+            $('#remote_starting').hide();
+        }
+        if(['finishing', 'completed', 'expired', 'error', 'closed'].includes(data.status)){
+            $('#remote_url_btn').hide();
+            $('#remote_starting').hide();
+            $('#remote_status_row').hide();
+        }
+        if(['finishing', 'completed'].includes(data.status)){
+            $('#capture_processing').show();
+        }
+        if(data.error || data.last_status_error){
+            $('#interactive_error').text(data.error || data.last_status_error).show();
+        }
+    });
+}
+</script>
+</html>
