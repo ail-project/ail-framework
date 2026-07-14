@@ -8,7 +8,7 @@ git+https://github.com/MISP/PyTaxonomies
 git+https://github.com/MISP/PyMISPGalaxies
 
 # Core
-redis>4.4.4
+redis>4.4.4,<=7.4.1
 python-magic>0.4.15
 yara-python>4.0.2
 pyfaup-rs
