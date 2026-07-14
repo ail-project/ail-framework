@@ -146,7 +146,11 @@ class UserAccount(AbstractSubtypeObject):
         return self.get_nb_correlation('chat')
 
     def get_forum(self):
-        return self.get_correlation('forum').get('forum', set()).pop()
+        forum = self.get_correlation('forum').get('forum')
+        if forum:
+            return forum.pop()
+        else:
+            return None
 
     def get_posts(self):
         return self.get_correlation('post').get('post', set())
