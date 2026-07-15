@@ -7,9 +7,11 @@ API Helper
 
 """
 import base64
+import binascii
 import gzip
 import hashlib
 import json
+import magic
 import os
 import pickle
 import re
@@ -71,6 +73,17 @@ activate_crawler = config_loader.get_config_str("Crawler", "activate_crawler")
 D_HAR = config_loader.get_config_boolean('Crawler', 'default_har')
 D_SCREENSHOT = config_loader.get_config_boolean('Crawler', 'default_screenshot')
 config_loader = None
+
+
+# IMAGE
+MAX_IMAGE_SIZE = 5000000
+ACCEPTED_IMAGE_MIME_TYPES = {
+    # 'image/gif',
+    'image/jpeg',
+    'image/png',
+    'image/webp',
+}
+
 
 # logger_crawler = logging.getLogger('crawlers.log')
 
@@ -750,6 +763,55 @@ def _gzip_all_hars():
     for har_id in get_all_har_ids():
         _gzip_har(har_id)
 
+
+def extract_images_from_har(har, size_limit=MAX_IMAGE_SIZE):
+    images = {}
+    if not har:
+        return images
+    for entry in har.get('log', {}).get('entries', []):
+        request = entry.get('request', {})
+        response = entry.get('response', {})
+        url = request.get('url')
+        content = response.get('content', {})
+        mime_type = content.get('mimeType', '')
+        body = content.get('text')
+        if not url or not body:
+            continue
+        is_b64 = content.get('encoding') == 'base64'
+        if response.get('status') != 200 or mime_type not in ACCEPTED_IMAGE_MIME_TYPES:
+            continue
+        image_content = _get_image_content_bytes(body, is_b64)
+        if not image_content:
+            continue
+        if 0 < size_limit < len(image_content):
+            print('HAR IMAGE SIZE LIMIT', url)
+            continue
+        detected_mime_type = magic.from_buffer(image_content, mime=True)
+        if detected_mime_type not in ACCEPTED_IMAGE_MIME_TYPES:
+            print('HAR IMAGE INVALID MIME TYPE', detected_mime_type, url)
+            continue
+        images[url] = {
+            'content': body,
+            'b64': is_b64,
+            'mime_type': detected_mime_type,
+        }
+    return images
+
+def _get_image_content_bytes(content, b64=False):
+    if b64:
+        try:
+            if isinstance(content, str):
+                content = ''.join(content.split())
+            return base64.b64decode(content, validate=True)
+        except (binascii.Error, ValueError):
+            return None
+    if isinstance(content, bytes):
+        return content
+    if isinstance(content, str):
+        return content.encode()
+    return None
+
+
 # # # - - # # #
 
 ################################################################################
@@ -837,6 +899,12 @@ class Cookiejar:
     def _set_date(self, date):
         r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'date', date)
 
+    def get_last_edit(self):
+        return r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'last_edit')
+
+    def update_last_edit(self):
+        r_crawler.hset(f'cookiejar:meta:{self.uuid}', 'last_edit', int(time.time()))
+
     def get_description(self):
         return r_crawler.hget(f'cookiejar:meta:{self.uuid}', 'description')
 
@@ -873,6 +941,7 @@ class Cookiejar:
         elif old_level == 2:
             ail_orgs.remove_obj_to_org(self.get_org(), 'cookiejar', self.uuid)
         self.set_level(new_level, new_org_uuid)
+        self.update_last_edit()
 
     ## --LEVEL-- ##
 
@@ -934,6 +1003,7 @@ class Cookiejar:
     def set_local_storage(self, storage): # TODO check if file already exists
         with gzip.open(self.get_local_storage_file(), 'w+') as f:
             f.write(json.dumps(storage).encode())
+        self.update_last_edit()
 
     def delete_local_storage(self):
         try:
@@ -958,7 +1028,22 @@ class Cookiejar:
             meta['local_storage'] = self.get_local_storage(r_json=r_json)
         return meta
 
-    def add_cookie(self, name, value, cookie_uuid=None, domain=None, httponly=None, path=None, secure=None, text=None):
+    def set_cookies(self, cookies):
+        self.delete_cookies()
+        for cookie in cookies:
+            name = cookie.get('name')
+            value = cookie.get('value')
+            domain = cookie.get('domain')
+            path = cookie.get('path')
+            expires = cookie.get('expires')
+            httponly = cookie.get('httpOnly')
+            secure = cookie.get('secure')
+            samesite = cookie.get('sameSite')
+            if name and value:
+                self.add_cookie(name, value, domain=domain, httponly=httponly, path=path, secure=secure,
+                                     expires=expires, samesite=samesite)
+
+    def add_cookie(self, name, value, cookie_uuid=None, domain=None, httponly=None, path=None, secure=None, expires=None, samesite=None, text=None):
         if cookie_uuid:
             cookie = Cookie(cookie_uuid)
             if cookie.exists():
@@ -974,20 +1059,30 @@ class Cookiejar:
         cookie.set_field('value', value)
         if domain:
             cookie.set_field('domain', domain)
-        if httponly:
+        if httponly is not None:
             cookie.set_field('httpOnly', str(httponly))
         if path:
             cookie.set_field('path', path)
-        if secure:
+        if secure is not None:
             cookie.set_field('secure', str(secure))
+        if expires:
+            cookie.set_field('expires', str(expires))
+        if samesite is not None:
+            cookie.set_field('sameSite', str(samesite))
         if text:
-            cookie.set_field('path', text)
+            cookie.set_field('text', text)
         return cookie_uuid
 
     def delete_cookie(self, cookie_uuid):
         if self.is_cookie_in_jar(cookie_uuid):
             cookie = Cookie(cookie_uuid)
             cookie.delete()
+
+    def delete_cookies(self):
+        for cookie_uuid in self.get_cookies_uuid():
+            cookie = Cookie(cookie_uuid)
+            cookie.delete()
+        self.update_last_edit()
 
     # TODO Last EDIT
     def create(self, user_org, user_id, level, description=None):
@@ -1003,6 +1098,7 @@ class Cookiejar:
         self._set_date(datetime.now().strftime("%Y%m%d"))  # TODO improve DATE
         if description:
             self.set_description(description)
+        self.update_last_edit()
 
     def delete(self):
         for cookie_uuid in self.get_cookies_uuid():
@@ -1100,35 +1196,45 @@ def api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role,
 
 ####  API  ####
 
-
-#########################################################################
-
-# TODO edit existing cookiejat local storage
 def api_import_lacus_cookiejar(user_org, user_id, data, cookiejar_uuid=None):
     url = data.get('url')
     storage = data.get('storage')
-
     if not url:
         return {'error': 'url not set'}, 400
     if not storage:
         return {'error': 'lacus storage not set'}, 400
 
-    cookiejar_uuid = None  # TODO edit/replace cookiejar
-    cookies = storage.get('cookies')
+    cookiejar_uuid = data.get('uuid')
+    level = data.get('level', 1)
+    description = data.get('description')
+    cookies = storage.get('cookies', [])
     origins = storage.get('origins')
 
     if not cookies and not origins:
         return {'error': 'No cookies or local storage to import'}, 400
 
-    # TODO check if is valid JSON
-
-    # TODO extract DOMAIN
-
     # Create new cookiejar
     if not cookiejar_uuid:
-        cookiejar_uuid = create_cookiejar(user_org, user_id, f"{url} - imported from lacus", 1, None)
-    cookiejar = Cookiejar(cookiejar_uuid)
-
+        if not description:
+            description = f"{url} - imported from lacus"
+        cookiejar_uuid = create_cookiejar(user_org, user_id, description, level, None)
+        cookiejar = Cookiejar(cookiejar_uuid)
+    else:
+        cookiejar = Cookiejar(cookiejar_uuid)
+        if not cookiejar.exists():
+            return {'error': 'unknown cookiejar uuid'}, 404
+        cookiejar.delete_local_storage()
+    for cookie in cookies:
+        name = cookie.get('name')
+        value = cookie.get('value')
+        domain = cookie.get('domain')
+        path = cookie.get('path')
+        expires = cookie.get('expires')
+        httponly = cookie.get('httpOnly')
+        secure = cookie.get('secure')
+        samesite = cookie.get('sameSite')
+        if name and value:
+            cookiejar.add_cookie(name, value, domain=domain, httponly=httponly, path=path, secure=secure, expires=expires, samesite=samesite)
     cookiejar.set_local_storage(storage)
 
     return {'cookiejar_uuid': cookiejar_uuid}, 200
@@ -1208,6 +1314,10 @@ class Cookie:
         for field in self.get_fields():
             value = self._get_field(field)
             if value:
+                if field == 'httpOnly':
+                    value = value == 'True'
+                elif field == 'secure':
+                    value = value == 'True'
                 meta[field] = value
         if r_json:
             data = json.dumps(meta, indent=4, sort_keys=True)
@@ -1342,8 +1452,11 @@ def api_import_cookies_from_json(user_org, user_id, user_role, cookiejar_uuid, j
 #             #
 # # # # # # # #
 
-def get_default_user_agent():
-    return 'Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0'
+def get_default_user_agent(linux=False):
+    if linux:
+        return 'Mozilla/5.0 (X11; Linux x86_64; rv:140.0) Gecko/20100101 Firefox/140.0'
+    else:
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0'
 
 def get_last_crawled_domains(domain_type):
     return r_crawler.lrange(f'last_{domain_type}', 0, -1)
@@ -2134,6 +2247,468 @@ def api_delete_schedule(data):
         return {'error': 'unknown schedule uuid', 'uuid': schedule}, 404
     return {'uuid': schedule.delete()}, 200
 
+
+#### FORUM CRAWLER RUNNING ACCOUNTS ####
+
+
+def add_running_forum_crawler_account(forum_id, account_id, launch_time=None):
+    if launch_time is None:
+        launch_time = int(time.time())
+    r_crawler.zadd('forum:crawl:running', {f'{forum_id}:{account_id}': launch_time})
+
+def get_running_forum_crawler_account_time(forum_id, account_id):
+    return r_crawler.zscore('forum:crawl:running', f'{forum_id}:{account_id}')
+
+def remove_running_forum_crawler_account(forum_id, account_id):
+    return r_crawler.zrem('forum:crawl:running', f'{forum_id}:{account_id}')
+
+def get_running_forum_crawler_account_keys(withscores=False):
+    return r_crawler.zrange('forum:crawl:running', 0, -1, withscores=withscores)
+
+def get_running_forum_crawler_accounts(with_launch_time=False):
+    account_keys = get_running_forum_crawler_account_keys(withscores=with_launch_time)
+    accounts = []
+    for row in account_keys:
+        if with_launch_time:
+            account_key, launch_time = row
+        else:
+            account_key = row
+        forum_id, account_id = account_key.split(':', 1)
+        if with_launch_time:
+            accounts.append((forum_id, account_id, int(launch_time)))
+        else:
+            accounts.append((forum_id, account_id))
+    return accounts
+
+
+def get_nb_running_forum_crawler_accounts():
+    return r_crawler.zcard('forum:crawl:running')
+
+
+def get_forum_crawler_max_accounts():
+    nb_accounts = r_cache.hget('crawler:lacus', 'forum_nb_accounts')
+    if not nb_accounts:
+        nb_accounts = r_db.hget('crawler:lacus', 'forum_nb_accounts')
+        if not nb_accounts:
+            nb_accounts = 0
+            save_forum_crawler_max_accounts(nb_accounts)
+        else:
+            r_cache.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+    return int(nb_accounts)
+
+
+def save_forum_crawler_max_accounts(nb_accounts):
+    r_db.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+    r_cache.hset('crawler:lacus', 'forum_nb_accounts', int(nb_accounts))
+
+
+def api_set_forum_crawler_max_accounts(data):
+    nb_accounts = data.get('nb', 0)
+    try:
+        nb_accounts = int(nb_accounts)
+        if nb_accounts < 0:
+            nb_accounts = 0
+    except (TypeError, ValueError):
+        return {'error': 'Invalid number of forum account crawler tasks to launch'}, 400
+    save_forum_crawler_max_accounts(nb_accounts)
+    return nb_accounts, 200
+
+
+def can_launch_forum_crawler_account():
+    return get_nb_running_forum_crawler_accounts() < get_forum_crawler_max_accounts()
+
+
+#### INTERACTIVE CRAWLER SESSIONS ####
+
+INTERACTIVE_SESSION_TTL = 3600
+INTERACTIVE_SESSION_META_TTL = 3600
+INTERACTIVE_ACTIVE_STATES = {'starting', 'ready', 'finishing'}
+INTERACTIVE_FINAL_STATES = {'completed', 'expired', 'error', 'closed'}
+
+def get_max_interactive_crawler():
+    nb = r_cache.hget('crawler:lacus', 'max_interactive_crawler')
+    if not nb:
+        nb = r_db.hget('crawler:lacus', 'max_interactive_crawler')
+        if not nb:
+            nb = 1
+            save_max_interactive_crawler(nb)
+        else:
+            r_cache.hset('crawler:lacus', 'max_interactive_crawler', int(nb))
+    return int(nb)
+
+def save_max_interactive_crawler(nb):
+    r_db.hset('crawler:lacus', 'max_interactive_crawler', int(nb))
+    r_cache.hset('crawler:lacus', 'max_interactive_crawler', int(nb))
+
+def api_set_max_interactive_crawler(data):
+    nb = data.get('nb', 1)
+    try:
+        nb = int(nb)
+        if nb < 0:
+            nb = 0
+    except (TypeError, ValueError):
+        return {'error': 'Invalid number of interactive crawler sessions'}, 400
+    save_max_interactive_crawler(nb)
+    return nb, 200
+
+def _cleanup_interactive_task_capture(task_uuid=None, capture_uuid=None):
+    if capture_uuid:
+        capture = CrawlerCapture(capture_uuid)
+        if capture.exists():
+            capture.delete()
+    if task_uuid:
+        task = CrawlerTask(task_uuid)
+        if task.exists():
+            task.delete()
+
+def cleanup_stale_interactive_sessions(now=None):
+    if now is None:
+        now = int(time.time())
+    for session_uuid, launch_time in r_cache.zrange('crawler:interactive:sessions', 0, -1, withscores=True):
+        session = InteractiveCrawlerSession(session_uuid)
+        if not session.exists():
+            r_cache.srem('crawler:interactive:active', session_uuid)
+            r_cache.zrem('crawler:interactive:sessions', session_uuid)
+            continue
+        status = session.get_status()
+        if status in INTERACTIVE_FINAL_STATES:
+            continue
+        if now - int(launch_time) > INTERACTIVE_SESSION_TTL:
+            session.expire()
+
+def get_nb_active_interactive_sessions():
+    cleanup_stale_interactive_sessions()
+    return r_cache.scard('crawler:interactive:active')
+
+def get_interactive_usage():
+    return {'active': get_nb_active_interactive_sessions(), 'max': get_max_interactive_crawler()}
+
+def get_interactive_session_by_capture(capture_uuid):
+    session_uuid = r_cache.hget('crawler:interactive:captures', capture_uuid)
+    if session_uuid:
+        return InteractiveCrawlerSession(session_uuid)
+    for candidate in r_cache.zrange('crawler:interactive:sessions', 0, -1):
+        session = InteractiveCrawlerSession(candidate)
+        if session.get_capture_uuid() == capture_uuid:
+            return session
+    return None
+
+def set_interactive_session_error_by_capture(capture_uuid, error_message, status='error', session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
+    if session and session.exists():
+        session.set('error', str(error_message))
+        session.release(status=status)
+        return True
+    return False
+
+def set_interactive_session_crawled_domain_by_capture(capture_uuid, domain, url=None, session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
+    if session and session.exists():
+        session.set('crawled_domain', domain)
+        if url:
+            session.set('crawled_url', url)
+
+def release_interactive_session_by_capture(capture_uuid, status='completed', session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
+    if session and session.exists():
+        if status == 'completed':
+            session.set('capture_status', CaptureStatus.DONE.name)
+        session.release(status=status)
+
+def get_active_interactive_sessions():
+    cleanup_stale_interactive_sessions()
+    sessions = []
+    for session_uuid in r_cache.smembers('crawler:interactive:active'):
+        session = InteractiveCrawlerSession(session_uuid)
+        if session.exists():
+            sessions.append(session.get_meta())
+    return sorted(sessions, key=lambda m: m.get('launch_time', 0))
+
+def get_user_active_interactive_session(user_id):
+    cleanup_stale_interactive_sessions()
+    session_uuid = r_cache.hget('crawler:interactive:users', user_id)
+    if session_uuid:
+        session = InteractiveCrawlerSession(session_uuid)
+        if session.is_active():
+            return session
+        r_cache.hdel('crawler:interactive:users', user_id)
+    return None
+
+def reserve_interactive_session(user_id, url, task_uuid=None):
+    cleanup_stale_interactive_sessions()
+    if get_user_active_interactive_session(user_id):
+        return None, {'error': 'User already has an active interactive session'}, 409
+    max_sessions = get_max_interactive_crawler()
+    if max_sessions <= 0:
+        return None, {'error': 'Interactive crawler sessions are disabled'}, 403
+    session_uuid = gen_uuid()
+    launch_time = int(time.time())
+    if r_cache.hget('crawler:interactive:users', user_id):
+        return None, {'error': 'User already has an active interactive session'}, 409
+    if r_cache.scard('crawler:interactive:active') >= max_sessions:
+        return None, {'error': 'No interactive crawler slots available'}, 429
+    r_cache.hset(f'crawler:interactive:session:{session_uuid}', mapping={'user': user_id, 'url': url, 'status': 'starting', 'launch_time': launch_time})
+    if task_uuid:
+        r_cache.hset(f'crawler:interactive:session:{session_uuid}', 'task_uuid', task_uuid)
+    r_cache.expire(f'crawler:interactive:session:{session_uuid}', INTERACTIVE_SESSION_META_TTL)
+    r_cache.hset('crawler:interactive:users', user_id, session_uuid)
+    r_cache.sadd('crawler:interactive:active', session_uuid)
+    r_cache.zadd('crawler:interactive:sessions', {session_uuid: launch_time})
+    return InteractiveCrawlerSession(session_uuid), None, 200
+
+
+def _remote_headed_response_to_meta(response):
+    if response is None:
+        return {}
+    if isinstance(response, dict):
+        return response
+    meta = {}
+    for field in ('uuid', 'status', 'raw_status', 'finish_requested', 'view_url', 'created_at', 'expires_at', 'error'):
+        if hasattr(response, field):
+            meta[field] = getattr(response, field)
+    return meta
+
+def finalize_interactive_cookiejar_session(capture_uuid, storage, session=None):
+    if session is None:
+        session = get_interactive_session_by_capture(capture_uuid)
+    if not session or session.get('save_cookiejar') != '1':
+        return None
+    try:
+        if not storage or not isinstance(storage, dict):
+            session.set('error', 'No cookies or local storage returned by the interactive browser')
+            return False
+        cookiejar_uuid = create_cookiejar(session.get('user_org'), session.get_user(), session.get('cookiejar_description'), 0, None)
+        print(f'New cookiejar {cookiejar_uuid}')
+        cookiejar = Cookiejar(cookiejar_uuid)
+        cookiejar.set_cookies(storage.get('cookies', []))
+        cookiejar.set_local_storage(storage)
+        session.set('cookiejar_uuid', cookiejar_uuid)
+        forum_id = session.get('forum_id')
+        account_id = session.get('forum_account_id')
+        if forum_id and account_id:
+            from lib.objects import Forums
+            forum = Forums.Forum(forum_id)
+            if forum.exists() and forum.exists_account(account_id):
+                account = forum.get_crawl_account(account_id)
+                account.set_cookiejar_uuid(cookiejar_uuid)
+                account.set_status('waiting')
+                forum.refresh_account_availability(account_id)
+        return True
+    except Exception as e:
+        session.set('error', str(e))
+        return False
+
+def refresh_interactive_session_status(session):
+    capture_uuid = session.get_capture_uuid()
+    if not capture_uuid:
+        return session.get_meta()
+    try:
+        lacus = get_lacus()
+        remote = _remote_headed_response_to_meta(lacus.get_remote_headed_session(capture_uuid))
+        if remote.get('status'):
+            session.set('remote_status', remote['status'])
+        if remote.get('raw_status') is not None:
+            session.set('remote_raw_status', remote['raw_status'])
+        if remote.get('finish_requested') is not None:
+            session.set('finish_requested', str(remote['finish_requested']))
+        if remote.get('view_url'):
+            session.set('remote_url', remote['view_url'])
+            if session.get_status() == 'starting':
+                session.set('status', 'ready')
+        if remote.get('expires_at'):
+            session.set('expires_at', remote['expires_at'])
+        if remote.get('error'):
+            session.set('error', remote['error'])
+            session.release(status='error')
+        capture_status = lacus.get_capture_status(capture_uuid)
+        session.set('capture_status', capture_status_to_string(capture_status))
+    except Exception as e:
+        session.set('last_status_error', str(e))
+    return session.get_meta()
+
+def capture_status_to_string(status):
+    try:
+        return CaptureStatus(int(status)).name
+    except (TypeError, ValueError):
+        return str(status)
+
+
+class InteractiveCrawlerSession:
+    def __init__(self, session_uuid):
+        self.uuid = session_uuid
+
+    def exists(self):
+        return r_cache.exists(f'crawler:interactive:session:{self.uuid}')
+
+    def get(self, field):
+        return r_cache.hget(f'crawler:interactive:session:{self.uuid}', field)
+
+    def set(self, field, value):
+        return r_cache.hset(f'crawler:interactive:session:{self.uuid}', field, value)
+
+    def get_user(self):
+        return self.get('user')
+
+    def get_status(self):
+        return self.get('status') or 'unknown'
+
+    def is_active(self):
+        return self.exists() and self.get_status() in INTERACTIVE_ACTIVE_STATES
+
+    def get_capture_uuid(self):
+        return self.get('capture_uuid')
+
+    def get_task_uuid(self):
+        return self.get('task_uuid')
+
+    def get_meta(self):
+        meta = r_cache.hgetall(f'crawler:interactive:session:{self.uuid}')
+        meta['uuid'] = self.uuid
+        try:
+            meta['launch_time'] = int(meta.get('launch_time', 0))
+        except (TypeError, ValueError):
+            meta['launch_time'] = 0
+        if meta.get('status') == 'completed':
+            meta['capture_status'] = CaptureStatus.DONE.name
+        elif meta.get('capture_status'):
+            meta['capture_status'] = capture_status_to_string(meta['capture_status'])
+        return meta
+
+    def release(self, status='completed'):
+        user = self.get_user()
+        task_uuid = self.get_task_uuid()
+        capture_uuid = self.get_capture_uuid()
+        self.set('status', status)
+        self.set('end_time', int(time.time()))
+        r_cache.expire(f'crawler:interactive:session:{self.uuid}', INTERACTIVE_SESSION_META_TTL)
+        r_cache.srem('crawler:interactive:active', self.uuid)
+        r_cache.zrem('crawler:interactive:sessions', self.uuid)
+        if capture_uuid:
+            r_cache.hdel('crawler:interactive:captures', capture_uuid)
+        if user:
+            r_cache.hdel('crawler:interactive:users', user)
+        if status in {'error', 'expired', 'closed'}:
+            _cleanup_interactive_task_capture(task_uuid=task_uuid, capture_uuid=capture_uuid)
+
+    def expire(self):
+        self.release(status='expired')
+
+
+def api_start_interactive_capture(data, user_org, user_id):
+    task, resp = api_parse_task_dict_basic(data, user_id)
+    if resp != 200:
+        return task, resp
+    if task.get('urls'):
+        return {'error': 'Interactive capture accepts only one URL'}, 400
+    task['depth_limit'] = 0
+    filter_local_ips_error = api_validate_global_urls(url=task.get('url'))
+    if filter_local_ips_error:
+        return filter_local_ips_error
+    session, error, code = reserve_interactive_session(user_id, task['url'])
+    if error:
+        return error, code
+    try:
+        cookiejar_only = bool(data.get('cookiejar_only'))
+        if cookiejar_only:
+            har = False
+            screenshot = False
+            tags = []
+            with_favicon = False
+        else:
+            har = task['har']
+            screenshot = task['screenshot']
+            tags = task['tags']
+            with_favicon = True
+
+        task_uuid = create_task(task['url'], depth=0, har=har, screenshot=screenshot, proxy=task['proxy'], tags=tags, parent='interactive', priority=90, external=True)
+        if not task_uuid:
+            session.release(status='error')
+            return {'error': 'Aborted by Crawler'}, 400
+        session.set('task_uuid', task_uuid)
+        if cookiejar_only:
+            CrawlerTask(task_uuid).set_cookiejar_only()
+            session.set('cookiejar_only', '1')
+        capture_uuid = session.uuid
+        lacus = get_lacus()
+        returned_uuid = lacus.enqueue(url=task['url'], depth=0, proxy=task['proxy'], with_favicon=with_favicon, force=True, uuid=capture_uuid, remote_headfull=True, java_script_enabled=task['javascript'], general_timeout_in_sec=int(data.get('general_timeout_in_sec') or 90))
+        capture_uuid = returned_uuid or capture_uuid
+        session.set('capture_uuid', capture_uuid)
+        r_cache.hset('crawler:interactive:captures', capture_uuid, session.uuid)
+        create_capture(capture_uuid, task_uuid)
+        CrawlerTask(task_uuid).start()
+        if data.get('save_cookiejar'):
+            session.set('save_cookiejar', '1')
+            session.set('user_org', user_org)
+            session.set('cookiejar_description', data.get('description') or f"{data.get('url')} - interactive cookiejar")
+            if data.get('forum_id') and data.get('forum_account_id'):
+                session.set('forum_id', data.get('forum_id'))
+                session.set('forum_account_id', data.get('forum_account_id'))
+        refresh_interactive_session_status(session)
+        return session.get_meta(), 200
+    except Exception as e:
+        print(e)
+        session.set('error', str(e))
+        session.release(status='error')
+        return {'error': 'Unable to start interactive capture', 'details': str(e)}, 502
+
+def api_get_interactive_session(session_uuid, user_id, is_admin=False):
+    session = InteractiveCrawlerSession(session_uuid)
+    if not session.exists():
+        return {'error': 'Unknown interactive session'}, 404
+    if not is_admin and session.get_user() != user_id:
+        return {'error': 'Forbidden'}, 403
+    if session.get_status() in INTERACTIVE_FINAL_STATES:
+        return session.get_meta(), 200
+    return refresh_interactive_session_status(session), 200
+
+def api_finish_interactive_session(session_uuid, user_id):
+    session = InteractiveCrawlerSession(session_uuid)
+    if not session.exists():
+        return {'error': 'Unknown interactive session'}, 404
+    if session.get_user() != user_id:
+        return {'error': 'Forbidden'}, 403
+    session.set('status', 'finishing')
+    capture_uuid = session.get_capture_uuid()
+    task_uuid = session.get_task_uuid()
+    try:
+        lacus = get_lacus()
+        remote = _remote_headed_response_to_meta(lacus.finish_remote_headed_session(capture_uuid))
+        if remote.get('status'):
+            session.set('remote_status', remote['status'])
+        if remote.get('finish_requested') is not None:
+            session.set('finish_requested', str(remote['finish_requested']))
+        if remote.get('view_url'):
+            session.set('remote_url', remote['view_url'])
+    except Exception as e:
+        session.set('error', str(e))
+    if capture_uuid and task_uuid:
+        refresh_interactive_session_status(session)
+    return session.get_meta(), 200
+
+def api_admin_close_interactive_session(session_uuid):
+    session = InteractiveCrawlerSession(session_uuid)
+    if not session.exists():
+        return {'error': 'Unknown interactive session'}, 404
+    capture_uuid = session.get_capture_uuid()
+    if capture_uuid:
+        try:
+            lacus = get_lacus()
+            remote = _remote_headed_response_to_meta(lacus.finish_remote_headed_session(capture_uuid))
+            if remote.get('status'):
+                session.set('remote_status', remote['status'])
+            if remote.get('finish_requested') is not None:
+                session.set('finish_requested', str(remote['finish_requested']))
+            if remote.get('view_url'):
+                session.set('remote_url', remote['view_url'])
+        except Exception as e:
+            session.set('error', str(e))
+    session.release(status='closed')
+    return session.get_meta(), 200
+
+
 #### CRAWLER CAPTURE ####
 
 def get_nb_crawler_captures():
@@ -2323,6 +2898,12 @@ class CrawlerTask:
 
     def get_screenshot(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'screenshot') == '1'
+
+    def is_cookiejar_only(self):
+        return r_crawler.hget(f'crawler:task:{self.uuid}', 'cookiejar_only') == '1'
+
+    def set_cookiejar_only(self):
+        return self._set_field('cookiejar_only', 1)
 
     def get_queue(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'queue')
@@ -2618,6 +3199,13 @@ def api_parse_task_dict_basic(data, user_id):
     else:
         depth_limit = 0
 
+    # JAVASCRIPT
+    javascript = data.get('javascript', True)
+    if isinstance(javascript, str):
+        javascript = javascript.lower() not in ['0', 'false', 'off']
+    else:
+        javascript = bool(javascript)
+
     # PROXY
     proxy = data.get('proxy', None)
     if proxy == 'onion' or proxy == 'tor' or proxy == 'force_tor':
@@ -2631,7 +3219,7 @@ def api_parse_task_dict_basic(data, user_id):
 
     tags = data.get('tags', [])
 
-    data = {'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'tags': tags}
+    data = {'depth_limit': depth_limit, 'har': har, 'screenshot': screenshot, 'proxy': proxy, 'javascript': javascript, 'tags': tags}
     if url:
         data['url'] = url
     elif urls:

@@ -476,6 +476,15 @@
                                     <label class="custom-control-label" for="message_obj"><i class="fas fa-comment-dots"></i>&nbsp;Message <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Messages from Chats"></i></label>
                                 </div>
                                 <div class="custom-control custom-switch mt-1">
+                                    <input class="custom-control-input" type="checkbox" name="post_obj" id="post_obj" {% if 'post' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
+                                    <label class="custom-control-label d-flex align-items-center" for="post_obj"><span class="mr-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="1em" height="1em" viewBox="0 0 24 24" data-toggle="tooltip" data-placement="right" title="Posts imported from forums and threads">
+                                            <path d="M0 0h24v24H0z" fill="none" />
+                                            <path fill="currentColor" d="M20 2H4a2 2 0 0 0-2 2v18l4-4h14a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2M6 9h12v2H6m8 3H6v-2h8m4-4H6V6h12" />
+                                        </svg>
+                                    </span>Forum post</label>
+                                </div>
+                                <div class="custom-control custom-switch mt-1">
                                     <input class="custom-control-input" type="checkbox" name="ocr_obj" id="ocr_obj" {% if 'ocr' in filter_obj_types or filter_obj_types|length == 0 %}checked=""{% endif %}>
                                     <label class="custom-control-label" for="ocr_obj"><i class="fas fa-expand"></i>&nbsp;OCR <i class="fas fa-info-circle text-info" data-toggle="tooltip" data-placement="right" title="Text extracted from Images"></i></label>
                                 </div>

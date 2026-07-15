@@ -37,10 +37,14 @@ class UserAccount(AbstractSubtypeObject):
     #                 'compress': 'gzip'}
     #     return payload
 
-    # # WARNING: UNCLEAN DELETE /!\ TEST ONLY /!\
-    def delete(self):
-        # # TODO:
-        pass
+    # TODO META + exists check
+    def create(self, date, obj, username=None, timestamp=None):
+        # daterange + correlation
+        self.add(date, obj)
+        if username:
+            username.add(date, self)
+            self.update_username_timeline(username.get_global_id(), timestamp)
+        return self
 
     def get_link(self, flask_context=False):
         if flask_context:
@@ -141,6 +145,22 @@ class UserAccount(AbstractSubtypeObject):
     def get_nb_chats(self):
         return self.get_nb_correlation('chat')
 
+    def get_forum(self):
+        forum = self.get_correlation('forum').get('forum')
+        if forum:
+            return forum.pop()
+        else:
+            return None
+
+    def get_posts(self):
+        return self.get_correlation('post').get('post', set())
+
+    def get_nb_posts(self):
+        return self.get_nb_correlation('post')
+
+    def get_forum_threads(self):
+        return self.get_correlation('forum-thread').get('forum-thread', set())
+
     def get_chat_subchannels(self):
         chats = self.get_correlation('chat-subchannel')['chat-subchannel']
         return chats
@@ -224,6 +244,10 @@ class UserAccount(AbstractSubtypeObject):
             meta['chats'] = self.get_chats()
         if 'nb_chats' in options:
             meta['nb_chats'] = self.get_nb_chats()
+        if 'forums' in options:
+            meta['forums'] = self.get_forum()
+        if 'nb_posts' in options:
+            meta['nb_posts'] = self.get_nb_posts()
         if 'subchannels' in options:
             meta['subchannels'] = self.get_chat_subchannels()
         if 'threads' in options:
@@ -264,6 +288,9 @@ class UserAccount(AbstractSubtypeObject):
             for tag in self.get_tags():
                 obj_attr.add_tag(tag)
         return obj
+
+    def delete(self):
+        self._delete()
 
 
 def get_all_subtypes():

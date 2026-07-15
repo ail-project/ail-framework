@@ -145,6 +145,8 @@ def manual():
                            l_cookiejar=l_cookiejar,
                            import_status=request.args.get('import_status'),
                            import_message=request.args.get('import_message'),
+                           interactive_session=crawlers.get_user_active_interactive_session(user_id),
+                           interactive_usage=crawlers.get_interactive_usage(),
                            tags_selector_data=Tag.get_tags_selector_data())
 
 
@@ -155,6 +157,86 @@ def import_lookyloo_archive():
     success, message = _import_lookyloo_archive_from_upload(request.files.get('lookyloo_archive'), logger=current_app.logger)
     return redirect(url_for('crawler_splash.manual', import_status='success' if success else 'error', import_message=message))
 
+
+@crawler_splash.route("/crawlers/interactive/", methods=['GET'])
+@login_required
+@login_user_no_api
+def interactive_capture_current():
+    user_id = current_user.get_user_id()
+    session = crawlers.get_user_active_interactive_session(user_id)
+    if session:
+        return redirect(url_for('crawler_splash.interactive_capture_show', uuid=session.uuid))
+    return render_template('interactive_capture_home.html', usage=crawlers.get_interactive_usage())
+
+@crawler_splash.route("/crawlers/interactive/start", methods=['POST'])
+@login_required
+@login_user_no_api
+def interactive_capture_start():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    data = {
+        'url': request.form.get('url_to_crawl') or request.form.get('url'),
+        'depth': 0,
+        'har': request.form.get('har'),
+        'screenshot': request.form.get('screenshot'),
+    }
+    crawler_type = request.form.get('crawler_queue_type')
+    proxy = request.form.get('proxy_name')
+    if not proxy and crawler_type == 'onion':
+        proxy = 'force_tor'
+    if proxy:
+        data['proxy'] = proxy
+    if request.form.get('interactive_cookiejar'):
+        data['save_cookiejar'] = True
+        data['description'] = request.form.get('cookiejar_description')
+    res = crawlers.api_start_interactive_capture(data, user_org, user_id)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return redirect(url_for('crawler_splash.interactive_capture_show', uuid=res[0]['uuid']))
+
+@crawler_splash.route("/crawlers/interactive/<uuid>", methods=['GET'])
+@login_required
+@login_user_no_api
+def interactive_capture_show(uuid):
+    user_id = current_user.get_user_id()
+    res = crawlers.api_get_interactive_session(uuid, user_id, is_admin=current_user.get_role() == 'admin')
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return render_template("interactive_capture.html", session=res[0], usage=crawlers.get_interactive_usage())
+
+@crawler_splash.route("/crawlers/interactive/<uuid>/status", methods=['GET'])
+@login_required
+@login_user_no_api
+def interactive_capture_status(uuid):
+    user_id = current_user.get_user_id()
+    res = crawlers.api_get_interactive_session(uuid, user_id, is_admin=current_user.get_role() == 'admin')
+    return create_json_response(res[0], res[1])
+
+@crawler_splash.route("/crawlers/interactive/<uuid>/finish", methods=['POST'])
+@login_required
+@login_user_no_api
+def interactive_capture_finish(uuid):
+    user_id = current_user.get_user_id()
+    res = crawlers.api_finish_interactive_session(uuid, user_id)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return redirect(url_for('crawler_splash.interactive_capture_show', uuid=uuid))
+
+@crawler_splash.route("/crawlers/interactive/admin", methods=['GET'])
+@login_required
+@login_admin
+def interactive_capture_admin():
+    return render_template("interactive_sessions_admin.html", sessions=crawlers.get_active_interactive_sessions(), usage=crawlers.get_interactive_usage())
+
+
+@crawler_splash.route("/crawlers/interactive/admin/<uuid>/close", methods=['POST'])
+@login_required
+@login_admin
+def interactive_capture_admin_close(uuid):
+    res = crawlers.api_admin_close_interactive_session(uuid)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return redirect(url_for('crawler_splash.interactive_capture_admin'))
 
 @crawler_splash.route("/crawlers/send_to_spider", methods=['POST'])
 @login_required
@@ -1099,6 +1181,8 @@ def crawler_settings():
     lacus_url = crawlers.get_lacus_url()
     api_key = crawlers.get_hidden_lacus_api_key()
     nb_captures = crawlers.get_crawler_max_captures()
+    nb_forum_accounts = crawlers.get_forum_crawler_max_accounts()
+    nb_interactive_crawlers = crawlers.get_max_interactive_crawler()
 
     is_manager_connected = crawlers.get_lacus_connection_metadata(force_ping=True)
     is_crawler_working = crawlers.is_test_ail_crawlers_successful()
@@ -1118,6 +1202,9 @@ def crawler_settings():
                            is_manager_connected=is_manager_connected,
                            lacus_url=lacus_url, api_key=api_key,
                            nb_captures=nb_captures,
+                           nb_forum_accounts=nb_forum_accounts,
+                           nb_interactive_crawlers=nb_interactive_crawlers,
+                           interactive_usage=crawlers.get_interactive_usage(),
                            # all_proxies=all_proxies,
                            is_crawler_working=is_crawler_working,
                            crawler_test_metadata=crawler_test_metadata,
@@ -1153,15 +1240,27 @@ def crawler_lacus_settings_crawler_manager():
 def crawler_settings_crawlers_to_launch():
     if request.method == 'POST':
         nb_captures = request.form.get('nb_captures')
+        nb_forum_accounts = request.form.get('nb_forum_accounts')
+        nb_interactive_crawlers = request.form.get('nb_interactive_crawlers')
         res = crawlers.api_set_crawler_max_captures({'nb': nb_captures})
+        if res[1] != 200:
+            return create_json_response(res[0], res[1])
+        res = crawlers.api_set_forum_crawler_max_accounts({'nb': nb_forum_accounts})
+        if res[1] != 200:
+            return create_json_response(res[0], res[1])
+        res = crawlers.api_set_max_interactive_crawler({'nb': nb_interactive_crawlers})
         if res[1] != 200:
             return create_json_response(res[0], res[1])
         else:
             return redirect(url_for('crawler_splash.crawler_settings'))
     else:
         nb_captures = crawlers.get_crawler_max_captures()
+        nb_forum_accounts = crawlers.get_forum_crawler_max_accounts()
+        nb_interactive_crawlers = crawlers.get_max_interactive_crawler()
         return render_template("settings_edit_crawlers_to_launch.html",
-                               nb_captures=nb_captures)
+                               nb_captures=nb_captures,
+                               nb_forum_accounts=nb_forum_accounts,
+                               nb_interactive_crawlers=nb_interactive_crawlers)
 
 
 @crawler_splash.route('/crawler/settings/crawler/test', methods=['GET'])

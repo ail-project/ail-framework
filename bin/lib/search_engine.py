@@ -24,6 +24,9 @@ from lib.objects import FilesNames
 from lib.objects import Images
 from lib.objects import Items
 from lib.objects import Messages
+from lib.objects import Forums
+from lib.objects import ForumThreads
+from lib.objects import Posts
 from lib.objects import Screenshots
 from lib.objects import Titles
 from lib.objects import UsersAccount
@@ -49,6 +52,14 @@ def is_meilisearch_enabled():
     return IS_MEILISEARCH_ENABLED
 
 
+# TODO One index for all forums ???
+# def load_forum_indexes():
+#     indexes = set()
+#     for protocol in chats_viewer.get_chat_protocols():
+#         indexes.add(f'c{protocol}')
+#     return indexes
+
+
 def load_messages_indexes():
     indexes = set()
     for protocol in chats_viewer.get_chat_protocols():
@@ -56,12 +67,13 @@ def load_messages_indexes():
     return indexes
 
 
+# FORUMS_INDEXES = load_forums_indexes()
 MESSAGES_INDEXES = load_messages_indexes()
 DATERANGE_INDEXES = {'filename', 'title'}
 
 
 def load_indexes_names():
-    names = {'desc-dom', 'desc-img', 'desc-screen', 'filename', 'title'}
+    names = {'desc-dom', 'desc-img', 'desc-screen', 'filename', 'forum', 'title'}
     for domain_types in Domains.get_all_domains_types():
         names.add(domain_types)
     for chat_name in MESSAGES_INDEXES:
@@ -85,6 +97,7 @@ def index_all():
     index_chats()
     index_user_accounts()
     index_messages()
+    index_forum_posts()
     index_images_descriptions()
     index_screenshots_descriptions()
     index_domains_descriptions()
@@ -96,10 +109,13 @@ class MeiliSearch:
     def __init__(self):
         self.client = meilisearch.Client(M_URL, M_KEY, timeout=5)
         self.search_client = meilisearch.Client(M_URL, M_KEY, timeout=30)
+        try:
+            self._known_indexes = set(self.get_indexes())
+        except meilisearch.errors.MeilisearchCommunicationError:
+            self._known_indexes = set()
 
     def init(self):
-        if not self.get_indexes():
-            self.create_indexes()
+        self.create_missing_indexes()
 
     def is_up(self):
         try:
@@ -179,7 +195,7 @@ class MeiliSearch:
         task_uid = getattr(task, 'task_uid', None) or task.get('taskUid')
         return self.client.wait_for_task(task_uid, timeout_in_ms=timeout_in_ms)
 
-    def search(self, indexes, query, nb=20, page=1, timestamp_from=None, timestamp_to=None, sort='recent'):
+    def search(self, indexes, query, nb=20, page=1, timestamp_from=None, timestamp_to=None, sort='recent', forum_ids=None, forum_types=None):
         # TODO investigate attributesToRetrieve speed
         end_query = []
         for index in indexes:
@@ -195,18 +211,27 @@ class MeiliSearch:
                  }
             if sort == 'recent':
                 q['sort'] = ['last:desc']
+            filters = []
+            if index == 'forum' and forum_ids:
+                escaped_forum_ids = [forum_id.replace('\\', '\\\\').replace("'", "\\'") for forum_id in forum_ids]
+                filters.append('fid IN [' + ', '.join([f"'{forum_id}'" for forum_id in escaped_forum_ids]) + ']')
+            if index == 'forum' and forum_types:
+                escaped_forum_types = [forum_type.replace('\\', '\\\\').replace("'", "\\'") for forum_type in forum_types]
+                filters.append('type IN [' + ', '.join([f"'{forum_type}'" for forum_type in escaped_forum_types]) + ']')
             if timestamp_from and timestamp_to:
                 if index in DATERANGE_INDEXES:
-                    q['filter'] = f'first >= {timestamp_from} AND last <= {timestamp_to}'
+                    filters.append(f'first >= {timestamp_from} AND last <= {timestamp_to}')
                 else:
-                    q['filter'] = f'last >= {timestamp_from} AND last <= {timestamp_to}'
+                    filters.append(f'last >= {timestamp_from} AND last <= {timestamp_to}')
             elif timestamp_from:
                 if index in DATERANGE_INDEXES:
-                    q['filter'] = f'first >= {timestamp_from}'
+                    filters.append(f'first >= {timestamp_from}')
                 else:
-                    q['filter'] = f'last >= {timestamp_from}'
+                    filters.append(f'last >= {timestamp_from}')
             elif timestamp_to:
-                q['filter'] = f'last <= {timestamp_to}'
+                filters.append(f'last <= {timestamp_to}')
+            if filters:
+                q['filter'] = ' AND '.join(filters)
             end_query.append(q)
         return self.search_client.multi_search(end_query, {'limit': nb, 'offset': (page - 1) * nb})
 
@@ -222,12 +247,23 @@ class MeiliSearch:
 
     def create_indexes(self):
         for index_name in get_indexes_names():
+            self.ensure_index(index_name)
+
+    def create_missing_indexes(self):
+        for index_name in get_indexes_names():
+            self.ensure_index(index_name)
+
+    def ensure_index(self, index_name):
+        if index_name not in self._known_indexes:
             self._create_index(index_name)
+            self._known_indexes.add(index_name)
 
     def setup_index_searchable_filterable_sortable(self, index_name):
         # restrict searchable attributes
         self.client.index(index_name).update_searchable_attributes(['content'])
         filterable_attributes = ['last']
+        if index_name == 'forum':
+            filterable_attributes.extend(['fid', 'type'])
         if index_name not in MESSAGES_INDEXES:
             filterable_attributes.append('first')
         # filter by daterange
@@ -270,6 +306,7 @@ class MeiliSearch:
                 raise MeilisearchError(e.message)
 
     def update(self, index, document, retry=3):
+        self.ensure_index(index)
         try:
             self.client.index(index).update_documents([document], primary_key='uuid')
         except (MeilisearchCommunicationError, MeilisearchApiError, MeilisearchTimeoutError) as e:
@@ -287,12 +324,14 @@ class MeiliSearch:
     def _delete(self, index):
         # self.client.index(index).delete_all_documents()
         self.client.delete_index(index)
+        self._known_indexes.remove(index)
 
     def _delete_all(self):
         indexes = self.client.get_indexes()
         for index in indexes["results"]:
             index.delete()
         delete_crawled_content_domains_items()
+        self._known_indexes = set()
 
     def get_stats(self):
         return self.client.get_all_stats()
@@ -461,6 +500,28 @@ def index_titles():
 
 ## FILENAME ##  # TODO update only
 
+def index_forum_thread(obj):
+    index = 'forum'
+    document = obj.get_search_document()
+    if document:
+        Engine.update(index, document)
+
+def index_forum_post(obj):
+    index = 'forum'
+    document = obj.get_search_document()
+    if document:
+        Engine.update(index, document)
+
+def index_forum_posts():
+    for forum_id in Forums.get_forums():
+        for obj_id, _score in ForumThreads.ForumThreads().get_id_iterators_by_subtype(forum_id):
+            thread = ForumThreads.ForumThread(obj_id, forum_id)
+            index_forum_thread(thread)
+            posts, _ = thread._get_posts()
+            for post_gid, _timestamp in posts:
+                _, _, post_id = post_gid.split(':', 2)
+                index_forum_post(Posts.Post(post_id))
+
 def index_file_name(obj):
     index = 'filename'
     document = obj.get_search_document()
@@ -481,6 +542,7 @@ INDEXING_FUNCTIONS = {
     'crawled': index_crawled,
     'chats': index_chats,
     'messages': index_messages,
+    'forum': index_forum_posts,
     'user_accounts': index_user_accounts,
     'images_descriptions': index_images_descriptions,
     'screenshots_descriptions': index_screenshots_descriptions,
@@ -589,6 +651,17 @@ def api_search(data):
     if sort != "best" and sort != "recent":
         return {"status": "error", "reason": "Invalid sort"}, 400
 
+    forum_ids = data.get("forum_ids", [])
+    if isinstance(forum_ids, str):
+        forum_ids = [forum_id for forum_id in forum_ids.split(',') if forum_id]
+
+    forum_types = data.get("forum_types", [])
+    if isinstance(forum_types, str):
+        forum_types = [forum_type for forum_type in forum_types.split(',') if forum_type]
+    invalid_forum_types = set(forum_types) - {'post', 'forum-thread'}
+    if invalid_forum_types:
+        return {"status": "error", "reason": "Invalid forum result type"}, 400
+
     timestamp_from = data.get("from")
     timestamp_to = data.get("to")
 
@@ -599,13 +672,13 @@ def api_search(data):
             return {"status": "error", "reason": "Invalid date from"}, 400
     if timestamp_to:
         try:
-            timestamp_to = Date.convert_str_date_to_epoch(timestamp_to)
+            timestamp_to = Date.convert_str_date_to_epoch_end(timestamp_to)
         except:
-            return {"status": "error", "reason": "Invalid date from"}, 400
+            return {"status": "error", "reason": "Invalid date to"}, 400
 
     try:
         result = Engine.search(indexes, to_search, page=page, nb=nb_per_page, timestamp_from=timestamp_from, sort=sort,
-                               timestamp_to=timestamp_to)
+                               timestamp_to=timestamp_to, forum_ids=forum_ids, forum_types=forum_types)
     except MeilisearchTimeoutError:
         return {
             "status": "error",
@@ -671,6 +744,12 @@ def api_search(data):
                 elif obj_type == 'file-name':
                     obj = FilesNames.FileName(obj_id)
                     meta = obj.get_meta(options={'link'})
+                elif obj_type == 'post':
+                    obj = Posts.Post(obj_id)
+                    meta = obj.get_meta(options={'content', 'link', 'user-account', 'full_date', 'state', 'svg_icon'})
+                elif obj_type == 'forum-thread':
+                    obj = ForumThreads.ForumThread(obj_id, subtype)
+                    meta = obj.get_meta(options={'link', 'name', 'info', 'nb_posts', 'icon'})
                 elif obj_type == 'title':
                     obj = Titles.Title(obj_id)
                     meta = obj.get_meta(options={'link'})

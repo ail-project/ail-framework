@@ -40,6 +40,18 @@ config_loader = None
 # CORRELATION MIGRATION
 ##################################
 
+COMMON_TEXT_OBJECT_CORRELATIONS = [
+    "cve",
+    "cryptocurrency",
+    "decoded",
+    "domain",
+    "file-name",
+    "mail",
+    "pdf",
+    "pgp",
+    "username",
+]
+
 CORRELATION_TYPES_BY_OBJ = {
     "author": ["pdf"],
     "barcode": ["chat", "cve", "cryptocurrency", "decoded", "domain", "image", "message", "screenshot"],
@@ -54,10 +66,15 @@ CORRELATION_TYPES_BY_OBJ = {
     "dom-hash": ["domain", "item"],
     "etag": ["domain"],
     "favicon": ["domain", "item"],  # TODO Decoded
+    "forum": ["post", "subforum", "user-account"],
+    "subforum": ["forum", "subforum", "forum-thread"],
+    "forum-thread": ["subforum", "post", "user-account"],
+    # TODO Extend to detection of text -> same as message
+    "post": ["forum", "forum-thread", "image", "user-account", *COMMON_TEXT_OBJECT_CORRELATIONS],
     "file-name": ["chat", "item", "message", "pdf"],
     "gtracker": ["domain", "item"],
     "hhhash": ["domain"],
-    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "qrcode", "user-account"],  # TODO subchannel + threads ????
+    "image": ["barcode", "chat", "chat-subchannel", "chat-thread", "message", "ocr", "post", "qrcode", "user-account"],  # TODO subchannel + threads ????
     "ip": ["ssh-key"],
     "item": ["cve", "cryptocurrency", "decoded", "domain", "dom-hash", "favicon", "file-name", "gtracker", "mail", "message", "pdf", "pgp", "screenshot", "title", "username"],  # chat ???
     "mail": ["domain", "item", "message"],  # chat ??
@@ -69,7 +86,7 @@ CORRELATION_TYPES_BY_OBJ = {
     "screenshot": ["barcode", "domain", "item", "qrcode"],
     "ssh-key": ["domain", "ip"],
     "title": ["domain", "item"],
-    "user-account": ["chat", "chat-subchannel", "chat-thread", "image", "message", "ocr", "username"],
+    "user-account": ["chat", "chat-subchannel", "chat-thread", "forum", "forum-thread", "image", "message", "ocr", "post", "username"],
     "username": ["domain", "item", "message", "user-account"],
 }
 

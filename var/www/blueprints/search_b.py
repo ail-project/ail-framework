@@ -22,6 +22,7 @@ sys.path.append(os.environ['AIL_BIN'])
 ##################################
 from lib import ail_core
 from lib import chats_viewer
+from lib import forums_viewer
 from lib import search_engine
 from lib.objects import SSHKeys
 
@@ -58,6 +59,22 @@ def search_dashboard():
         indexes = []
         indexes_str = None
 
+    forum_ids = request.args.get('forums')
+    if forum_ids:
+        forum_ids_str = forum_ids
+        forum_ids = [forum_id for forum_id in forum_ids.split(',') if forum_id]
+    else:
+        forum_ids = []
+        forum_ids_str = None
+
+    forum_types = request.args.get('forum_types')
+    if forum_types:
+        forum_types_str = forum_types
+        forum_types = [forum_type for forum_type in forum_types.split(',') if forum_type]
+    else:
+        forum_types = []
+        forum_types_str = None
+
     last_seen_from = request.args.get('from')
     last_seen_to = request.args.get('to')
 
@@ -70,7 +87,8 @@ def search_dashboard():
     search_error = None
     if search:
         r = search_engine.api_search({'indexes': indexes, 'search': search, 'page': page, 'user_id': user_id,
-                                      'from': last_seen_from, 'to': last_seen_to, 'sort': sort})
+                                      'from': last_seen_from, 'to': last_seen_to, 'sort': sort,
+                                      'forum_ids': forum_ids, 'forum_types': forum_types})
         if r[1] != 200:
             error_type = r[0].get('error_type')
             if error_type == 'meilisearch_timeout':
@@ -98,6 +116,11 @@ def search_dashboard():
     return render_template('search_dashboard.html',
                            bootstrap_label=bootstrap_label,
                            chat_protocols=chats_viewer.get_chat_protocols_meta(),
+                           forums=forums_viewer.get_forums(),
+                           selected_forums=forum_ids,
+                           forum_ids_str=forum_ids_str,
+                           selected_forum_types=forum_types,
+                           forum_types_str=forum_types_str,
                            indexes_str=indexes_str,
                            selected_scopes=indexes,
                            to_search=search,

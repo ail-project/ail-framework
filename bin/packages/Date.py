@@ -19,6 +19,11 @@ def convert_str_date_to_epoch(date_str):
     dt = datetime.datetime.strptime(date_str.replace('-', ''), "%Y%m%d").replace(tzinfo=datetime.timezone.utc)
     return int(dt.timestamp())
 
+def convert_str_date_to_epoch_end(date_str):
+    dt = datetime.datetime.strptime(date_str.replace('-', ''), "%Y%m%d").replace(tzinfo=datetime.timezone.utc)
+    dt = dt + datetime.timedelta(days=1, seconds=-1)
+    return int(dt.timestamp())
+
 def get_full_month_str(date_from, date_to):
     # add one day (if last day of the month)
     date_to = date_to + relativedelta(days=+1)
@@ -108,6 +113,22 @@ def get_current_week_day():
 def get_current_utc_full_time():
     timestamp = datetime.datetime.now(datetime.timezone.utc)
     return timestamp.strftime('%Y-%m-%d %H:%M:%S')
+
+def get_utc_datetime_from_timestamp(timestamp):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    return timestamp.strftime('%Y-%m-%d %H:%M:%S')
+
+def get_utc_date_from_timestamp(timestamp, separator=''):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    if separator:
+        return timestamp.strftime(f'%Y{separator}%m{separator}%d')
+    return timestamp.strftime('%Y%m%d')
+
+
+def get_utc_weekday_hour_from_timestamp(timestamp):
+    timestamp = datetime.datetime.fromtimestamp(float(timestamp), datetime.timezone.utc)
+    return timestamp.strftime('%a'), timestamp.hour
+
 
 def get_date_from_timestamp(timestamp):
     return datetime.datetime.fromtimestamp(timestamp).strftime('%Y%m%d')
