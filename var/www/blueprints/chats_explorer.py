@@ -38,6 +38,16 @@ bootstrap_label = ['primary', 'success', 'danger', 'warning', 'info']
 def create_json_response(data, status_code):
     return Response(json.dumps(data, indent=2, sort_keys=True), mimetype='application/json'), status_code
 
+def get_tempolocus_request_options():
+    requested = request.args.get('tempolocus') == '1'
+    holiday_profile = request.args.get('tempolocus_holiday_profile')
+    if holiday_profile not in {'standard', 'public-worker'}:
+        holiday_profile = 'standard'
+    activity_signal = request.args.get('tempolocus_activity_signal')
+    if activity_signal not in {'lack', 'peak'}:
+        activity_signal = 'lack'
+    return requested, holiday_profile, activity_signal
+
 # ============ FUNCTIONS ============
 
 # ============= ROUTES ==============
@@ -149,12 +159,20 @@ def chats_explorer_chat():
         languages = Language.get_all_languages()
         translation_languages = Language.get_translation_languages()
         languages_stats = chats_viewer.api_get_languages_stats('chat', instance_uuid, chat_id)
+        tempolocus_requested, tempolocus_holiday_profile, tempolocus_activity_signal = get_tempolocus_request_options()
+        tempolocus_predictions = {}
+        tempolocus_holiday_predictions = {}
+        if tempolocus_requested:
+            tempolocus_predictions = chats_viewer.get_chat_tempolocus_predictions('chat', instance_uuid, chat_id)
+            tempolocus_holiday_predictions = chats_viewer.get_chat_tempolocus_holiday_predictions('chat', instance_uuid, chat_id, holiday_profile=tempolocus_holiday_profile, activity_signal=tempolocus_activity_signal)
         lang_endpoint = url_for('chats_explorer.chats_explorer_chat_lang') + f'?type=chat&subtype={instance_uuid}&id={chat_id}&lang='
         return render_template('chat_viewer.html', chat=chat, bootstrap_label=bootstrap_label,
                                ollama_enabled=images_engine.is_ollama_enabled(),
                                ail_tags=Tag.get_modal_add_tags(chat['id'], chat['type'], chat['subtype']),
                                message_id=message_id, languages_stats=languages_stats, lang_endpoint=lang_endpoint,
-                               all_languages=languages, translation_languages=translation_languages, translation_target=target)
+                               tempolocus_predictions=tempolocus_predictions, tempolocus_holiday_predictions=tempolocus_holiday_predictions,
+                               tempolocus_requested=tempolocus_requested, tempolocus_holiday_profile=tempolocus_holiday_profile,
+                               tempolocus_activity_signal=tempolocus_activity_signal, all_languages=languages, translation_languages=translation_languages, translation_target=target)
 
 @chats_explorer.route("chats/explorer/chat/lang", methods=['GET'])
 @login_required
@@ -510,12 +528,20 @@ def objects_user_account():
         languages = Language.get_all_languages()
         translation_languages = Language.get_translation_languages()
         languages_stats = chats_viewer.api_get_languages_stats('user-account', instance_uuid, user_id)
+        tempolocus_requested, tempolocus_holiday_profile, tempolocus_activity_signal = get_tempolocus_request_options()
+        tempolocus_predictions = {}
+        tempolocus_holiday_predictions = {}
+        if tempolocus_requested and not is_forum_account:
+            tempolocus_predictions = chats_viewer.get_user_account_tempolocus_predictions(user_id, instance_uuid)
+            tempolocus_holiday_predictions = chats_viewer.get_user_account_tempolocus_holiday_predictions(user_id, instance_uuid, holiday_profile=tempolocus_holiday_profile, activity_signal=tempolocus_activity_signal)
         lang_endpoint = url_for('chats_explorer.objects_user_account_lang') + f'?subtype={instance_uuid}&id={user_id}&lang='
         account_context = 'forum' if is_forum_account else 'chat'
         return render_template('user_account.html', meta=user_account, bootstrap_label=bootstrap_label,
                                ail_tags=Tag.get_modal_add_tags(user_account['id'], user_account['type'], user_account['subtype']),
                                languages_stats=languages_stats, lang_endpoint=lang_endpoint, all_languages=languages,
-                               translation_languages=translation_languages, translation_target=target,
+                               tempolocus_predictions=tempolocus_predictions, tempolocus_holiday_predictions=tempolocus_holiday_predictions,
+                               tempolocus_requested=tempolocus_requested, tempolocus_holiday_profile=tempolocus_holiday_profile,
+                               tempolocus_activity_signal=tempolocus_activity_signal, translation_languages=translation_languages, translation_target=target,
                                account_context=account_context)
 
 

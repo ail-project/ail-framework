@@ -11,6 +11,9 @@ import sys
 import time
 import uuid
 
+import tempolocus
+from tempolocus.core import DetectionError
+
 from datetime import datetime, timezone
 
 sys.path.append(os.environ['AIL_BIN'])
@@ -1061,6 +1064,65 @@ def enrich_chat_relationships_labels(relationships):
             else:
                 meta[row['target']] = row['target']
     return meta
+
+def _get_tempolocus_predictions_from_weekly(weekly_activity, top=5):
+    if not weekly_activity:
+        return {}
+    try:
+        return tempolocus.detect(weekly_activity, kind='weekly', top=top)
+    except DetectionError:
+        return {}
+
+def _get_tempolocus_holiday_predictions_from_yearly_activity(yearly_activity, top=5, holiday_profile='standard', activity_signal='lack'):
+    yearly_results = []
+    for year, daily_activity in sorted(yearly_activity.items()):
+        if not daily_activity:
+            continue
+        try:
+            result = tempolocus.detect(
+                {'nb': [[day, count] for day, count in sorted(daily_activity.items())]},
+                kind='yearly',
+                top=top,
+                holiday_profile=holiday_profile,
+                activity_signal=activity_signal,
+            )
+            result['year'] = year
+            yearly_results.append(result)
+        except DetectionError:
+            continue
+    if not yearly_results:
+        return {}
+    return {
+        'input_type': 'yearly_daily_activity_by_year',
+        'holiday_profile': holiday_profile,
+        'activity_signal': activity_signal,
+        'years': yearly_results,
+    }
+
+def get_chat_tempolocus_predictions(chat_type, chat_instance_uuid, chat_id, top=5):
+    chat = get_obj_chat(chat_type, chat_instance_uuid, chat_id)
+    return _get_tempolocus_predictions_from_weekly(chat.get_nb_week_messages(), top=top)
+
+def get_chat_tempolocus_holiday_predictions(chat_type, chat_instance_uuid, chat_id, top=5, holiday_profile='standard', activity_signal='lack'):
+    chat = get_obj_chat(chat_type, chat_instance_uuid, chat_id)
+    yearly_activity = {}
+    for year in chat.get_message_years():
+        _, daily_activity = chat.get_nb_year_messages(year)
+        yearly_activity[str(year)] = daily_activity
+    return _get_tempolocus_holiday_predictions_from_yearly_activity(yearly_activity, top=top, holiday_profile=holiday_profile, activity_signal=activity_signal)
+
+def get_user_account_tempolocus_predictions(user_id, instance_uuid, top=5):
+    user_account = UsersAccount.UserAccount(user_id, instance_uuid)
+    weekly_activity = get_user_account_nb_all_week_messages(user_account.id, user_account.get_chats(), user_account.get_chat_subchannels())
+    return _get_tempolocus_predictions_from_weekly(weekly_activity, top=top)
+
+def get_user_account_tempolocus_holiday_predictions(user_id, instance_uuid, top=5, holiday_profile='standard', activity_signal='lack'):
+    user_account = UsersAccount.UserAccount(user_id, instance_uuid)
+    yearly_activity = {}
+    for year in user_account.get_years():
+        _, daily_activity = get_user_account_nb_year_messages(user_account.id, user_account.get_chats(), year)
+        yearly_activity[str(year)] = daily_activity
+    return _get_tempolocus_holiday_predictions_from_yearly_activity(yearly_activity, top=top, holiday_profile=holiday_profile, activity_signal=activity_signal)
 
 def api_get_chat_service_instance(chat_instance_uuid):
     chat_instance = ChatServiceInstance(chat_instance_uuid)

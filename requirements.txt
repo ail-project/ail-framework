@@ -101,6 +101,7 @@ coverage>=5.5
 # # # #
 PySocks>=1.7.1
 pycountry>=20.7.3
+tempolocus>=1.0.0
 
 idna
 publicsuffixlist

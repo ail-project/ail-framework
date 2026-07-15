@@ -134,6 +134,7 @@
                 <h5>Languages:</h5>
                 <div id="langpie" style="width: 100%;height: 300px;"></div>
                 {% include 'chats_explorer/block_language_stats.html' %}
+                    {% include 'chats_explorer/block_tempolocus.html' %}
 
                 {% with translate_url=url_for('chats_explorer.chats_explorer_chat', subtype=chat['subtype']), obj_id=chat['id'], pagination=chat['pagination'] %}
                     {% include 'chats_explorer/block_translation.html' %}
