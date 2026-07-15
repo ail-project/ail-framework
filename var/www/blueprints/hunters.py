@@ -456,7 +456,8 @@ def parse_add_edit_request(request_form):
             sources = request_form.get(f'sources_{obj_type}', [])
             if sources:
                 sources = json.loads(sources)
-                filters[obj_type]['sources'] = sources
+                if sources:
+                    filters[obj_type]['sources'] = sources
             excludes = request_form.get(f'sources_{obj_type}_exclude', [])
             if excludes:
                 excludes = json.loads(excludes)
@@ -910,7 +911,8 @@ def retro_hunt_add_task():
                 sources = request.form.get(f'sources_{obj_type}', [])
                 if sources:
                     sources = json.loads(sources)
-                    filters[obj_type]['sources'] = sources
+                    if sources:
+                        filters[obj_type]['sources'] = sources
                 # Subtypes
                 for obj_subtype in ail_core.get_object_all_subtypes(obj_type):
                     subtype = request.form.get(f'filter_{obj_type}_{obj_subtype}')

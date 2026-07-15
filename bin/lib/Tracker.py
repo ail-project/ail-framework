@@ -1257,6 +1257,11 @@ def api_validate_tracker_to_add(to_track, tracker_type, nb_words=1):
         return {"status": "error", "reason": "Incorrect type"}, 400
     return {"status": "success", "tracked": to_track, "type": tracker_type}, 200
 
+def remove_empty_sources_filters(filters):
+    for obj_filter in filters.values():
+        if not obj_filter.get('sources'):
+            obj_filter.pop('sources', None)
+
 def api_add_tracker(dict_input, org, user_id):
     to_track = dict_input.get('tracked', None)
     if not to_track:
@@ -1288,6 +1293,7 @@ def api_add_tracker(dict_input, org, user_id):
     # Filters # TODO MOVE ME
     filters = dict_input.get('filters', {})
     if filters:
+        remove_empty_sources_filters(filters)
         if filters.keys() == get_objects_tracked() and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
             filters = {}
         for obj_type in filters:
@@ -1379,6 +1385,7 @@ def api_edit_tracker(dict_input, user_org, user_id, user_role):
     # Filters # TODO MOVE ME
     filters = dict_input.get('filters', {})
     if filters:
+        remove_empty_sources_filters(filters)
         if filters.keys() == get_objects_tracked() and set(filters['pgp'].get('subtypes', [])) == {'mail', 'name'}:
             if not filters['decoded'] and not filters['item']:
                 filters = {}
@@ -2422,6 +2429,7 @@ def api_create_retro_hunt_task(dict_input, user_org, user_id):
     # Filters # TODO MOVE ME
     filters = dict_input.get('filters', {})
     if filters:
+        remove_empty_sources_filters(filters)
         if filters.keys() == get_objects_retro_hunted():
             filters = {}
         for obj_type in filters:
