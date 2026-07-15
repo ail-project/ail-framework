@@ -1027,6 +1027,50 @@ def crawler_cookiejar_local_storage_delete():
     return redirect(url_for('crawler_splash.crawler_cookiejar_show', uuid=cookiejar_uuid))
 
 
+@crawler_splash.route('/crawler/cookiejar/json/export', methods=['GET'])
+@login_required
+@login_admin
+def crawler_cookiejar_json_export():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    user_role = current_user.get_role()
+    cookiejar_uuid = request.args.get('uuid')
+
+    res = crawlers.api_export_cookiejar_json(user_org, user_id, user_role, cookiejar_uuid)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    response = Response(json.dumps(res[0], indent=2, sort_keys=True), mimetype='application/json')
+    response.headers['Content-Disposition'] = f'attachment; filename=cookiejar-{cookiejar_uuid}.json'
+    return response
+
+
+@crawler_splash.route('/crawler/cookiejar/json/import', methods=['POST'])
+@login_required
+@login_admin
+def crawler_cookiejar_json_import():
+    user_org = current_user.get_org()
+    user_id = current_user.get_user_id()
+    user_role = current_user.get_role()
+    cookiejar_uuid = request.form.get('uuid')
+
+    if 'file' not in request.files:
+        return create_json_response({'error': 'cookiejar JSON file not set'}, 400)
+
+    file = request.files['file']
+    try:
+        data = json.loads(file.read().decode())
+    except json.decoder.JSONDecodeError:
+        return create_json_response({'error': 'invalid cookiejar JSON'}, 400)
+
+    if cookiejar_uuid:
+        res = crawlers.api_import_cookiejar_json(user_org, user_id, user_role, cookiejar_uuid, data)
+    else:
+        res = crawlers.api_create_cookiejar_from_json(user_org, user_id, data)
+    if res[1] != 200:
+        return create_json_response(res[0], res[1])
+    return redirect(url_for('crawler_splash.crawler_cookiejar_show', uuid=res[0]['cookiejar_uuid']))
+
+
 @crawler_splash.route('/crawler/cookiejar/delete', methods=['GET'])
 @login_required
 @login_user_no_api

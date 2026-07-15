@@ -67,6 +67,16 @@
           Create Cookiejar
         </a>
 
+        {% if current_user.is_admin() %}
+          <form class="d-inline-block my-4" action="{{ url_for('crawler_splash.crawler_cookiejar_json_import') }}" method="post" enctype="multipart/form-data">
+            <label class="btn btn-warning mb-0">
+              <i class="fas fa-file-import"></i>
+              Import Cookiejar JSON
+              <input type="file" name="file" accept="application/json,.json" onchange="this.form.submit();" hidden>
+            </label>
+          </form>
+        {% endif %}
+
       </div>
 		</div>
 	</div>

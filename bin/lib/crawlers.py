@@ -1196,6 +1196,86 @@ def api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role,
 
 ####  API  ####
 
+def api_export_cookiejar_json(user_org, user_id, user_role, cookiejar_uuid):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'view')
+    if resp:
+        return resp
+    cookiejar = Cookiejar(cookiejar_uuid)
+    storage = cookiejar.get_local_storage()
+    if not isinstance(storage, dict):
+        storage = {}
+    storage['cookies'] = cookiejar.get_cookies()
+
+    return {
+        'uuid': cookiejar_uuid,
+        'description': cookiejar.get_description(),
+        'level': cookiejar.get_level(),
+        'storage': storage,
+    }, 200
+
+
+def _import_storage_in_cookiejar(cookiejar, storage):
+    cookies = storage.get('cookies', [])
+    origins = storage.get('origins')
+
+    if not cookies and not origins:
+        return {'error': 'No cookies or local storage to import'}, 400
+
+    cookiejar.delete_cookies()
+    cookiejar.delete_local_storage()
+    cookiejar.set_cookies(cookies)
+    cookiejar.set_local_storage(storage)
+
+
+def _get_storage_from_cookiejar_json(data):
+    storage = data.get('storage')
+    if storage is None:
+        storage = data.get('local_storage', data)
+        if isinstance(storage, dict) and 'cookies' not in storage and 'cookies' in data:
+            storage['cookies'] = data.get('cookies', [])
+    if not isinstance(storage, dict):
+        return None
+    return storage
+
+
+def api_import_cookiejar_json(user_org, user_id, user_role, cookiejar_uuid, data):
+    resp = api_check_cookiejar_access_acl(cookiejar_uuid, user_org, user_id, user_role, 'edit')
+    if resp:
+        return resp
+    storage = _get_storage_from_cookiejar_json(data)
+    if storage is None:
+        return {'error': 'invalid cookiejar JSON storage'}, 400
+    res = _import_storage_in_cookiejar(Cookiejar(cookiejar_uuid), storage)
+    if res:
+        return res
+    return {'cookiejar_uuid': cookiejar_uuid}, 200
+
+
+def api_create_cookiejar_from_json(user_org, user_id, data):
+    storage = _get_storage_from_cookiejar_json(data)
+    if storage is None:
+        return {'error': 'invalid cookiejar JSON storage'}, 400
+
+    level = data.get('level', 1)
+    try:
+        level = int(level)
+    except (TypeError, ValueError):
+        level = 1
+    if level not in range(0, 3):
+        level = 1
+
+    description = data.get('description')
+    if not description:
+        description = 'imported from cookiejar JSON'
+
+    cookiejar_uuid = create_cookiejar(user_org, user_id, description, level, None)
+    res = _import_storage_in_cookiejar(Cookiejar(cookiejar_uuid), storage)
+    if res:
+        Cookiejar(cookiejar_uuid).delete()
+        return res
+    return {'cookiejar_uuid': cookiejar_uuid}, 200
+
+
 def api_import_lacus_cookiejar(user_org, user_id, data, cookiejar_uuid=None):
     url = data.get('url')
     storage = data.get('storage')
@@ -1207,11 +1287,6 @@ def api_import_lacus_cookiejar(user_org, user_id, data, cookiejar_uuid=None):
     cookiejar_uuid = data.get('uuid')
     level = data.get('level', 1)
     description = data.get('description')
-    cookies = storage.get('cookies', [])
-    origins = storage.get('origins')
-
-    if not cookies and not origins:
-        return {'error': 'No cookies or local storage to import'}, 400
 
     # Create new cookiejar
     if not cookiejar_uuid:
@@ -1223,19 +1298,9 @@ def api_import_lacus_cookiejar(user_org, user_id, data, cookiejar_uuid=None):
         cookiejar = Cookiejar(cookiejar_uuid)
         if not cookiejar.exists():
             return {'error': 'unknown cookiejar uuid'}, 404
-        cookiejar.delete_local_storage()
-    for cookie in cookies:
-        name = cookie.get('name')
-        value = cookie.get('value')
-        domain = cookie.get('domain')
-        path = cookie.get('path')
-        expires = cookie.get('expires')
-        httponly = cookie.get('httpOnly')
-        secure = cookie.get('secure')
-        samesite = cookie.get('sameSite')
-        if name and value:
-            cookiejar.add_cookie(name, value, domain=domain, httponly=httponly, path=path, secure=secure, expires=expires, samesite=samesite)
-    cookiejar.set_local_storage(storage)
+    res = _import_storage_in_cookiejar(cookiejar, storage)
+    if res:
+        return res
 
     return {'cookiejar_uuid': cookiejar_uuid}, 200
 
