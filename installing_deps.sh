@@ -8,39 +8,37 @@ set -e
 
 sudo apt-get update
 
-sudo apt-get install python3-pip virtualenv python3-dev python3-tk libfreetype6-dev \
-    screen g++ unzip libsnappy-dev cmake -qq
-
-sudo apt-get install automake libtool make gcc pkg-config -qq
+packages="python3-pip virtualenv python3-dev python3-tk libfreetype6-dev screen g++ unzip libsnappy-dev cmake automake libtool make gcc pkg-config"
 
 #Needed for downloading jemalloc
-sudo apt-get install wget -qq
+packages="${packages} wget"
 
 #Needed for bloom filters
-sudo apt-get install libssl-dev libfreetype6-dev python3-numpy -qq
+packages="${packages} libssl-dev libfreetype6-dev python3-numpy"
 
 # pycld3
-sudo apt-get install protobuf-compiler libprotobuf-dev -qq
+packages="${packages} protobuf-compiler libprotobuf-dev"
 
 # qrcode
-sudo apt-get install python3-opencv -y
-sudo apt-get install libzbar0 -y
+packages="${packages} python3-opencv libzbar0"
 
 # DNS deps
-sudo apt-get install libadns1 libadns1-dev -qq
+packages="${packages} libadns1 libadns1-dev"
 
 #Needed for redis-lvlDB
-sudo apt-get install libev-dev libgmp-dev -qq # TODO NEED REVIEW
+packages="${packages} libev-dev libgmp-dev" # TODO NEED REVIEW
 
 #Need for generate-data-flow graph
-sudo apt-get install graphviz -qq
+packages="${packages} graphviz"
 
 # ssdeep
-sudo apt-get install libfuzzy-dev -qq
-sudo apt-get install build-essential libffi-dev autoconf -qq
+packages="${packages} libfuzzy-dev build-essential libffi-dev autoconf"
 
 # sflock, gz requirement
-sudo apt-get install p7zip-full -qq # TODO REMOVE ME
+packages="${packages} p7zip-full" # TODO REMOVE ME
+
+# resolve needed packages & install all at once while keeping history of why some packages are needed.
+sudo apt-get install --assume-yes ${packages}
 
 # SUBMODULES #
 git submodule update --init --recursive
@@ -49,7 +47,7 @@ git submodule update --init --recursive
 test ! -d redis/ && git clone https://github.com/redis/redis.git
 pushd redis/
 git checkout 5.0
-make
+make -j
 popd
 
 # tlsh
@@ -67,7 +65,7 @@ test ! -d pgpdump && git clone https://github.com/kazu-yamamoto/pgpdump.git
 pushd pgpdump/
 autoreconf -fiW all
 ./configure
-make
+make -j
 sudo make install
 popd
 
@@ -79,7 +77,7 @@ unzip yara_temp/yara.zip -d yara_temp/
 pushd yara_temp/yara-${YARA_VERSION}
 ./bootstrap.sh
 ./configure
-make
+make -j
 sudo make install
 make check
 popd
