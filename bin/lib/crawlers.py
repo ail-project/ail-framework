@@ -2872,6 +2872,9 @@ TASK_LEGACY_PRIORITY = 49
 # Re-queue a failed task behind tasks of the same priority, above the next priority level:
 # TASK_RETRY_DEMOTION * retries must stay below the smallest gap between priority levels (10)
 TASK_RETRY_DEMOTION = 1
+TASK_MAX_RETRIES = 5
+# Below every priority level, including retried discovery tasks (0 - TASK_RETRY_DEMOTION * TASK_MAX_RETRIES)
+TASK_PARKED_PRIORITY = -10
 
 class CrawlerTask:
 
@@ -3087,10 +3090,28 @@ class CrawlerTask:
         self._set_field('start_time', datetime.now().strftime("%Y/%m/%d  -  %H:%M.%S"))
 
     def reset(self):
+        """
+        Send a task that could not be processed back to the queue, to be retried.
+
+        The task is re-queued behind every task of its priority, 1 lower per retry.
+        After TASK_MAX_RETRIES it is parked at TASK_PARKED_PRIORITY: kept, but only retried
+        when nothing else is queued.
+
+        Every call counts as a retry, whatever the cause: a failure that repeats immediately
+        (e.g. onion lookup error) parks the task within a few loops. To send a task back
+        without counting a retry, use add_to_db_crawler_queue() with the score it was popped
+        with (e.g. Lacus unreachable).
+
+        Return the number of retries.
+        """
         retries = r_crawler.hincrby(f'crawler:task:{self.uuid}', 'retries', 1)
-        priority = self.get_priority() - retries * TASK_RETRY_DEMOTION
+        if retries > TASK_MAX_RETRIES:
+            priority = TASK_PARKED_PRIORITY
+        else:
+            priority = self.get_priority() - retries * TASK_RETRY_DEMOTION
         r_crawler.hdel(f'crawler:task:{self.uuid}', 'start_time')
         self.add_to_db_crawler_queue(priority)
+        return retries
 
     # Crawler
     def remove(self):  # zrem cache + DB
