@@ -2867,6 +2867,9 @@ def delete_captures():
 
 #### CRAWLER TASK ####
 
+# Tasks popped before their priority was recorded: previous reset() priority
+TASK_LEGACY_PRIORITY = 49
+
 class CrawlerTask:
 
     def __init__(self, task_uuid):
@@ -2947,6 +2950,16 @@ class CrawlerTask:
 
     def get_start_time(self):
         return r_crawler.hget(f'crawler:task:{self.uuid}', 'start_time')
+
+    def get_priority(self):
+        priority = r_crawler.hget(f'crawler:task:{self.uuid}', 'priority')
+        if priority is None:
+            return TASK_LEGACY_PRIORITY
+        return float(priority)
+
+    def set_priority(self, priority):
+        # Keep the first recorded priority: a re-queued task is popped with a lower score
+        r_crawler.hsetnx(f'crawler:task:{self.uuid}', 'priority', priority)
 
     # TODO
     def get_status(self):
@@ -3112,6 +3125,7 @@ def add_task_to_lacus_queue():
         return None
     task_uuid, priority = task_uuid[0]
     task = CrawlerTask(task_uuid)
+    task.set_priority(priority)
     return task, priority
 
 # PRIORITY:  discovery = 0 (10 if new domain), scheduler = 40, pasties = 60, manual = 90, interactive = 90 (not queued)
