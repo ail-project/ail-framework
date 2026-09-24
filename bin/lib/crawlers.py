@@ -2992,7 +2992,7 @@ class CrawlerTask:
 
     # TODO STATUS UPDATE
     # TODO SANITIZE PRIORITY
-    # PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
+    # PRIORITY:  discovery = 0 (10 if new domain), scheduler = 40, pasties = 60, manual = 90, interactive = 90 (not queued)
     def create(self, url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
                user_agent=None, tags=[], parent='manual', priority=0, external=False, new_task=False):
         if self.exists():
@@ -3114,7 +3114,7 @@ def add_task_to_lacus_queue():
     task = CrawlerTask(task_uuid)
     return task, priority
 
-# PRIORITY:  discovery = 0/10, feeder = 10, manual = 50, auto = 40, test = 100
+# PRIORITY:  discovery = 0 (10 if new domain), scheduler = 40, pasties = 60, manual = 90, interactive = 90 (not queued)
 def create_task(url, depth=1, har=True, screenshot=True, header=None, cookiejar=None, proxy=None,
                 user_agent=None, tags=[], parent='manual', priority=0, task_uuid=None, external=False, new_task=False):
     """
