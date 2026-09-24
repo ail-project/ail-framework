@@ -190,7 +190,7 @@ class Crawler(AbstractModule):
                 task.start()
                 task_uuid = task.uuid
                 try:
-                    self.enqueue_capture(task_uuid, priority)
+                    self.enqueue_capture(task_uuid, task.get_priority())
                 except ConnectionError:
                     print(task_row)
                     task = crawlers.CrawlerTask(task_uuid)
