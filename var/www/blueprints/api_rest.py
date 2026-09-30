@@ -93,6 +93,15 @@ def token_required(user_role):
 def create_json_response(data, status_code):
     return Response(json.dumps(data) + "\n", mimetype='application/json'), status_code
 
+def require_json_body(funct):
+    """Decorator that rejects requests whose JSON body is not a dict."""
+    @wraps(funct)
+    def wrapper(*args, **kwargs):
+        if not isinstance(request.get_json(silent=True), dict):
+            return create_json_response({'status': 'error', 'reason': 'Invalid JSON body'}, 400)
+        return funct(*args, **kwargs)
+    return wrapper
+
 # ============= ROUTES ==============
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -136,6 +145,7 @@ def v1_image_similarity_phash_search():
 # # TODO: ADD RESULT JSON Response
 @api_rest.route("api/v1/add/crawler/task", methods=['POST'])  # TODO V2 Migration
 @token_required('user')
+@require_json_body
 def add_crawler_task():
     data = request.get_json()
     user_token = get_auth_from_header()
@@ -164,6 +174,7 @@ def get_crawler_captures():
 
 @api_rest.route("api/v1/add/crawler/capture", methods=['POST'])  # TODO V2 Migration
 @token_required('user')
+@require_json_body
 def add_crawler_capture():
     data = request.get_json()
     user_token = get_auth_from_header()
@@ -184,6 +195,7 @@ def get_onions_up_month(date_year_month):
 
 @api_rest.route("api/v1/lacus/cookiejar/import", methods=['POST'])
 @token_required('user')
+@require_json_body
 def lacus_cookiejar_import():
     data = request.get_json()
     user_token = get_auth_from_header()
@@ -240,6 +252,7 @@ def get_crawler_blacklist():
 
 @api_rest.route("api/v1/crawler/blacklist/add", methods=['POST'])
 @token_required('admin')
+@require_json_body
 def add_crawler_blacklist():
     data = request.get_json()
     res = crawlers.api_blacklist_domain(data)
@@ -266,6 +279,7 @@ def import_json_item():
 
 @api_rest.route("api/v1/import/crawler/capture", methods=['POST'])
 @token_required('user')
+@require_json_body
 def import_crawler_capture():
     data_json = request.get_json()
     res = crawlers.api_add_lacus_capture_to_import(data_json)
@@ -426,6 +440,7 @@ def v1_investigation(investigation_uuid):
 
 @api_rest.route("api/v1/user/create", methods=['POST'])
 @token_required('admin')
+@require_json_body
 def v1_user_create():
     data_json = request.get_json()
     user_token = get_auth_from_header()
