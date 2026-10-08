@@ -143,6 +143,11 @@ class Crawler(AbstractModule):
         print(f'domain_url:  {domain_url}')
         print()
 
+    def reset_task(self, task):
+        retries = task.reset()
+        if retries == crawlers.TASK_MAX_RETRIES + 1:
+            self.logger.warning(f'Task {task.uuid} parked after {crawlers.TASK_MAX_RETRIES} retries, {task.get_url()}')
+
     def _update_capture_status(self, capture):
         try:
             status = self.lacus.get_capture_status(capture.uuid)
@@ -182,7 +187,7 @@ class Crawler(AbstractModule):
                                 task.delete()
                                 return None
                         except OnionFilteringError:
-                            task.reset()
+                            self.reset_task(task)
                             self.logger.warning(f'Onion Filtering Connection Error, {task.uuid} Send back in queue')
                             time.sleep(10)
                             return None
@@ -190,7 +195,7 @@ class Crawler(AbstractModule):
                 task.start()
                 task_uuid = task.uuid
                 try:
-                    self.enqueue_capture(task_uuid, priority)
+                    self.enqueue_capture(task_uuid, task.get_priority())
                 except ConnectionError:
                     print(task_row)
                     task = crawlers.CrawlerTask(task_uuid)
@@ -224,7 +229,7 @@ class Crawler(AbstractModule):
                             crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                             self.logger.warning(f'capture UNKNOWN Timeout, {task.uuid} Interactive session failed')
                         else:
-                            task.reset()
+                            self.reset_task(task)
                             capture.delete()
                             self.logger.warning(f'capture UNKNOWN Timeout, {task.uuid} Send back in queue')
                     else:
@@ -238,7 +243,7 @@ class Crawler(AbstractModule):
                             crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                             self.logger.warning(f'capture QUEUED Timeout, {task.uuid}, {task.get_url()} Interactive session failed, start_time={capture_start}')
                         else:
-                            task.reset()
+                            self.reset_task(task)
                             capture.delete()
                             self.logger.warning(f'capture QUEUED Timeout, {task.uuid}, {task.get_url()} Send back in queue, start_time={capture_start}')
                     else:
@@ -255,7 +260,7 @@ class Crawler(AbstractModule):
                         crawlers.set_interactive_session_error_by_capture(capture.uuid, error_message)
                         self.logger.warning(f'ERROR INVALID CAPTURE STATUS {status}, {task.uuid} Interactive session failed')
                     else:
-                        task.reset()
+                        self.reset_task(task)
                         capture.delete()
                         self.logger.warning(f'ERROR INVALID CAPTURE STATUS {status}, {task.uuid} Send back in queue')
 
@@ -470,7 +475,7 @@ class Crawler(AbstractModule):
             if error_message.startswith('Something went poorly'):
                 # Timeout, require restart of lacus
                 if 'Too many open files' in error_message:
-                    task.reset()
+                    self.reset_task(task)
                     capture.delete()
                     self.logger.warning(f'Lacus Too many open files Error, {task.uuid} Send back in queue')
                     time.sleep(60)
