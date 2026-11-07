@@ -109,6 +109,9 @@ tempolocus>=1.0.0
 
 requests
 
+#Openai
+openai
+
 chardet
 
 ##### Old packages
