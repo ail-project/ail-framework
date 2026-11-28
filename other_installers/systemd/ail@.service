@@ -1,0 +1,23 @@
+[Unit]
+Description=AIL Framework (%i)
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+User=%i
+WorkingDirectory=/opt/ail-framework
+RuntimeDirectory=ail-screen-%i
+RuntimeDirectoryMode=0700
+Environment=SCREENDIR=%t/ail-screen-%i
+Environment=AIL_SKIP_UPDATE=1
+ExecStart=/bin/bash bin/LAUNCH.sh -l
+ExecStartPost=/usr/bin/screen -S Script_AIL -Q windows
+ExecStartPost=/usr/bin/screen -S Flask_AIL -Q windows
+ExecStop=/bin/bash bin/LAUNCH.sh -k
+KillMode=control-group
+TimeoutStartSec=120
+TimeoutStopSec=60
+
+[Install]
+WantedBy=multi-user.target
