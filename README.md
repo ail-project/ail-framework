@@ -254,6 +254,8 @@ https://localhost:7000/
 
 The default credentials are stored in the `DEFAULT_PASSWORD` file and the file is removed once the password is changed.
 
+To start AIL at boot and keep interactive access to the module consoles, see [Running AIL with systemd](other_installers/systemd/README.md).
+
 ## Documentation
 
 - Main documentation: [doc/README.md](doc/README.md)

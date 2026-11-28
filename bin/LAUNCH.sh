@@ -10,7 +10,7 @@ YELLOW="\\033[1;33m"
 CYAN="\\033[1;36m"
 
 # Getting CWD where bash script resides
-DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd |sed 's/bin//' )"
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )/.." && pwd )/"
 export AIL_HOME="${DIR}"
 
 cd ${AIL_HOME}
